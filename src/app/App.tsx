@@ -1,3 +1,5 @@
+'use client';
+
 import { useEffect, useState } from 'react';
 import { BudgetHeader } from './components/BudgetHeader';
 import { BudgetFilters } from './components/BudgetFilters';
