@@ -106,6 +106,12 @@ function buildRowComputedData(
   return monthlyData;
 }
 
+function collectDescendantIds(row: BudgetRow): string[] {
+  if (!row.children?.length) return [];
+
+  return row.children.flatMap((child) => [child.id, ...collectDescendantIds(child)]);
+}
+
 export function BudgetTable({ data, onDataChange, startMonth, endMonth }: BudgetTableProps) {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(
     new Set(data.filter((row) => row.isExpanded).map((row) => row.id))
@@ -119,13 +125,29 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
       ?.filter((child) => child.level === 'conta' && child.children?.length)
       .map((child) => child.id) ?? []
   );
+  const rowById = useMemo(() => {
+    const map = new Map<string, BudgetRow>();
+
+    const visit = (row: BudgetRow) => {
+      map.set(row.id, row);
+      row.children?.forEach(visit);
+    };
+
+    data.forEach(visit);
+    return map;
+  }, [data]);
 
   const toggleRow = (rowId: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
+      const row = rowById.get(rowId);
 
       if (next.has(rowId)) {
         next.delete(rowId);
+        row?.children?.forEach((child) => {
+          next.delete(child.id);
+          collectDescendantIds(child).forEach((descendantId) => next.delete(descendantId));
+        });
       } else {
         next.add(rowId);
       }
@@ -176,13 +198,13 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     return map;
   }, [data]);
 
-  const showContaColumn = data.some(
-    (row) => row.level === 'dfc' && row.children?.length && expandedRows.has(row.id)
-  );
-  const showSubcontaColumn = data.some((row) =>
-    row.children?.some(
-      (child) => child.level === 'conta' && child.children?.length && expandedRows.has(child.id)
-    )
+  const showContaColumn = data.some((row) => row.children?.length && expandedRows.has(row.id));
+  const showSubcontaColumn = data.some(
+    (row) =>
+      expandedRows.has(row.id) &&
+      row.children?.some(
+        (child) => child.level === 'conta' && child.children?.length && expandedRows.has(child.id)
+      )
   );
 
   const formatNumber = (num: number) =>
@@ -241,7 +263,7 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     { length: endMonth - startMonth + 1 },
     (_, index) => startMonth + index
   );
-  const lastStickyShadow = '2px 0 0 #d1d5db, 10px 0 12px -12px rgba(15, 23, 42, 0.35)';
+  const lastStickyShadow = '8px 0 10px -12px rgba(15, 23, 42, 0.22)';
   const controlButtonClassName =
     'rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900';
 
@@ -266,9 +288,20 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     const hasChildren = Boolean(row.children?.length);
     const isSummaryRow = highlightedRows.has(row.dfc);
     const isLeafRow = !hasChildren;
-    const canEditValues = row.editable && isLeafRow && !isSummaryRow;
+    const isRevenueEditable = row.id === 'receita';
+    const canEditValues = (row.editable && isLeafRow && !isSummaryRow) || isRevenueEditable;
     const hidePercentages = row.dfc === 'Receita';
     const showInlineTotal = isExpanded && hasChildren && !isSummaryRow;
+    const outerDividerClassName = showInlineTotal
+      ? 'border-slate-300'
+      : isSummaryRow
+        ? 'border-white/20'
+        : 'border-gray-200';
+    const innerDividerClassName = showInlineTotal
+      ? 'border-slate-300'
+      : isSummaryRow
+        ? 'border-white/15'
+        : 'border-gray-100';
     const rowClassName = isSummaryRow
       ? 'bg-[#0066A1] text-white font-semibold'
       : showInlineTotal
@@ -280,15 +313,15 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
         ? 'bg-[#cbd5e1] text-slate-950 font-semibold'
       : 'bg-white text-gray-900';
     const totalColumnClassName = isSummaryRow
-      ? 'bg-[#0066A1] text-white border-r border-gray-200 p-0'
+      ? 'bg-[#0066A1] text-white border-r border-white/20 p-0'
       : showInlineTotal
-        ? 'bg-[#cbd5e1] text-slate-950 font-semibold border-r border-gray-200 p-0'
+        ? 'bg-[#cbd5e1] text-slate-950 font-semibold border-r border-slate-300 p-0'
       : 'bg-white text-gray-900 border-r border-gray-200 p-0';
 
     const rows: ReactElement[] = [
       <tr key={row.id} className={`${rowClassName} border-b border-gray-200`}>
         <td
-          className={`sticky z-30 border-r border-gray-200 px-4 py-3 min-w-[180px] w-[180px] ${stickyCellClassName}`}
+          className={`sticky z-30 border-r px-4 py-3 min-w-[180px] w-[180px] ${stickyCellClassName} ${outerDividerClassName}`}
           style={{
             left: 0,
             boxShadow: !showContaColumn ? lastStickyShadow : undefined,
@@ -304,7 +337,7 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
 
         {showContaColumn && (
           <td
-            className={`sticky z-30 border-r px-4 py-3 min-w-[200px] w-[200px] ${stickyCellClassName}`}
+            className={`sticky z-30 border-r px-4 py-3 min-w-[200px] w-[200px] ${stickyCellClassName} ${outerDividerClassName}`}
             style={{
               left: DFC_COLUMN_WIDTH,
               boxShadow: !showSubcontaColumn ? lastStickyShadow : undefined,
@@ -323,7 +356,7 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
 
         {showSubcontaColumn && (
           <td
-            className={`sticky z-30 border-r px-4 py-3 min-w-[220px] w-[220px] ${stickyCellClassName}`}
+            className={`sticky z-30 border-r px-4 py-3 min-w-[220px] w-[220px] ${stickyCellClassName} ${outerDividerClassName}`}
             style={{
               left: DFC_COLUMN_WIDTH + CONTA_COLUMN_WIDTH,
               boxShadow: lastStickyShadow,
@@ -343,17 +376,17 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
           const percentProposta = calculatePercent(monthData.orcamento, monthData.proposta);
 
           return (
-            <td key={`${row.id}-month-${month}`} colSpan={5} className="p-0 border-r border-gray-200">
+            <td key={`${row.id}-month-${month}`} colSpan={5} className={`p-0 border-r ${outerDividerClassName}`}>
               <div className="flex">
-                <div className="flex-1 px-3 py-3 text-right border-r border-gray-100 min-w-[100px]">
+                <div className={`flex-1 px-3 py-3 text-right border-r min-w-[100px] ${innerDividerClassName}`}>
                   <span>{formatNumber(monthData.anterior)}</span>
                 </div>
 
-                <div className="flex-1 px-3 py-3 text-right border-r border-gray-100 min-w-[80px] text-sm">
+                <div className={`flex-1 px-3 py-3 text-right border-r min-w-[80px] text-sm ${innerDividerClassName}`}>
                   {hidePercentages ? '' : formatPercent(percentAnterior)}
                 </div>
 
-                <div className="flex-1 px-3 py-3 text-right border-r border-gray-100 min-w-[100px]">
+                <div className={`flex-1 px-3 py-3 text-right border-r min-w-[100px] ${innerDividerClassName}`}>
                   {canEditValues ? (
                     <input
                       type="text"
@@ -361,14 +394,18 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
                       onChange={(event) =>
                         handleValueChange(row.id, month, 'proposta', event.target.value)
                       }
-                      className="w-full text-right bg-transparent border-none outline-none focus:bg-blue-50 rounded px-1"
+                      className={`w-full text-right border-none outline-none rounded px-1 ${
+                        isRevenueEditable
+                          ? 'bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900'
+                          : 'bg-transparent text-inherit focus:bg-blue-50'
+                      }`}
                     />
                   ) : (
                     <span>{formatNumber(monthData.proposta)}</span>
                   )}
                 </div>
 
-                <div className="flex-1 px-3 py-3 text-right border-r border-gray-100 min-w-[80px] text-sm">
+                <div className={`flex-1 px-3 py-3 text-right border-r min-w-[80px] text-sm ${innerDividerClassName}`}>
                   {hidePercentages ? '' : formatPercent(percentProposta)}
                 </div>
 
@@ -380,7 +417,11 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
                       onChange={(event) =>
                         handleValueChange(row.id, month, 'orcamento', event.target.value)
                       }
-                      className="w-full text-right bg-transparent border-none outline-none focus:bg-blue-50 rounded px-1"
+                      className={`w-full text-right border-none outline-none rounded px-1 ${
+                        isRevenueEditable
+                          ? 'bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900'
+                          : 'bg-transparent text-inherit focus:bg-blue-50'
+                      }`}
                     />
                   ) : (
                     <span>{formatNumber(monthData.orcamento)}</span>
