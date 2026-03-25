@@ -1,5 +1,5 @@
 import { ReactElement, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil } from 'lucide-react';
 import { BudgetRow, MonthlyData } from '../types/budget';
 
 interface BudgetTableProps {
@@ -388,18 +388,21 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
 
                 <div className={`flex-1 px-3 py-3 text-right border-r min-w-[100px] ${innerDividerClassName}`}>
                   {canEditValues ? (
-                    <input
-                      type="text"
-                      value={formatNumber(monthData.proposta)}
-                      onChange={(event) =>
-                        handleValueChange(row.id, month, 'proposta', event.target.value)
-                      }
-                      className={`w-full text-right border-none outline-none rounded px-1 ${
-                        isRevenueEditable
-                          ? 'bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900'
-                          : 'bg-transparent text-inherit focus:bg-blue-50'
-                      }`}
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formatNumber(monthData.proposta)}
+                        onChange={(event) =>
+                          handleValueChange(row.id, month, 'proposta', event.target.value)
+                        }
+                        className={`w-full text-right border-none outline-none rounded px-1 pr-4 ${
+                          isRevenueEditable
+                            ? 'bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900'
+                            : 'bg-transparent text-inherit focus:bg-blue-50'
+                        }`}
+                      />
+                      <Pencil className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
+                    </div>
                   ) : (
                     <span>{formatNumber(monthData.proposta)}</span>
                   )}
@@ -411,18 +414,21 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
 
                 <div className="flex-1 px-3 py-3 text-right min-w-[100px]">
                   {canEditValues ? (
-                    <input
-                      type="text"
-                      value={formatNumber(monthData.orcamento)}
-                      onChange={(event) =>
-                        handleValueChange(row.id, month, 'orcamento', event.target.value)
-                      }
-                      className={`w-full text-right border-none outline-none rounded px-1 ${
-                        isRevenueEditable
-                          ? 'bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900'
-                          : 'bg-transparent text-inherit focus:bg-blue-50'
-                      }`}
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formatNumber(monthData.orcamento)}
+                        onChange={(event) =>
+                          handleValueChange(row.id, month, 'orcamento', event.target.value)
+                        }
+                        className={`w-full text-right border-none outline-none rounded px-1 pr-4 ${
+                          isRevenueEditable
+                            ? 'bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900'
+                            : 'bg-transparent text-inherit focus:bg-blue-50'
+                        }`}
+                      />
+                      <Pencil className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
+                    </div>
                   ) : (
                     <span>{formatNumber(monthData.orcamento)}</span>
                   )}
