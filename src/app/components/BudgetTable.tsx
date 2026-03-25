@@ -111,6 +111,15 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     new Set(data.filter((row) => row.isExpanded).map((row) => row.id))
   );
 
+  const dfcRowIds = data
+    .filter((row) => row.level === 'dfc' && row.children?.length)
+    .map((row) => row.id);
+  const contaRowIds = data.flatMap((row) =>
+    row.children
+      ?.filter((child) => child.level === 'conta' && child.children?.length)
+      .map((child) => child.id) ?? []
+  );
+
   const toggleRow = (rowId: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
@@ -123,6 +132,20 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
 
       return next;
     });
+  };
+
+  const setExpansionMode = (mode: 'dfc' | 'contas' | 'subcontas') => {
+    if (mode === 'dfc') {
+      setExpandedRows(new Set());
+      return;
+    }
+
+    if (mode === 'contas') {
+      setExpandedRows(new Set(dfcRowIds));
+      return;
+    }
+
+    setExpandedRows(new Set([...dfcRowIds, ...contaRowIds]));
   };
 
   const computedDataById = useMemo(() => {
@@ -219,6 +242,8 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     (_, index) => startMonth + index
   );
   const lastStickyShadow = '2px 0 0 #d1d5db, 10px 0 12px -12px rgba(15, 23, 42, 0.35)';
+  const controlButtonClassName =
+    'rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900';
 
   const renderToggle = (rowId: string, isExpanded: boolean) => (
     <button
@@ -229,6 +254,12 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     </button>
   );
 
+  const renderTotalLabel = () => (
+    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-800">
+      Total
+    </span>
+  );
+
   const renderRow = (row: BudgetRow): ReactElement[] => {
     const rowMonthlyData = computedDataById.get(row.id) ?? row.monthlyData;
     const isExpanded = expandedRows.has(row.id);
@@ -237,14 +268,21 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     const isLeafRow = !hasChildren;
     const canEditValues = row.editable && isLeafRow && !isSummaryRow;
     const hidePercentages = row.dfc === 'Receita';
+    const showInlineTotal = isExpanded && hasChildren && !isSummaryRow;
     const rowClassName = isSummaryRow
       ? 'bg-[#0066A1] text-white font-semibold'
+      : showInlineTotal
+        ? 'bg-[#cbd5e1] text-slate-950 font-semibold'
       : 'bg-white text-gray-900';
     const stickyCellClassName = isSummaryRow
       ? 'bg-[#0066A1] text-white'
+      : showInlineTotal
+        ? 'bg-[#cbd5e1] text-slate-950 font-semibold'
       : 'bg-white text-gray-900';
     const totalColumnClassName = isSummaryRow
       ? 'bg-[#0066A1] text-white border-r border-gray-200 p-0'
+      : showInlineTotal
+        ? 'bg-[#cbd5e1] text-slate-950 font-semibold border-r border-gray-200 p-0'
       : 'bg-white text-gray-900 border-r border-gray-200 p-0';
 
     const rows: ReactElement[] = [
@@ -266,7 +304,7 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
 
         {showContaColumn && (
           <td
-            className={`sticky z-30 border-r border-gray-200 px-4 py-3 min-w-[200px] w-[200px] ${stickyCellClassName}`}
+            className={`sticky z-30 border-r px-4 py-3 min-w-[200px] w-[200px] ${stickyCellClassName}`}
             style={{
               left: DFC_COLUMN_WIDTH,
               boxShadow: !showSubcontaColumn ? lastStickyShadow : undefined,
@@ -277,19 +315,25 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
                 {hasChildren && renderToggle(row.id, isExpanded)}
                 <span>{row.conta}</span>
               </div>
+            ) : row.level === 'dfc' && showInlineTotal ? (
+              <div className="pl-6">{renderTotalLabel()}</div>
             ) : null}
           </td>
         )}
 
         {showSubcontaColumn && (
           <td
-            className={`sticky z-30 border-r border-gray-200 px-4 py-3 min-w-[220px] w-[220px] ${stickyCellClassName}`}
+            className={`sticky z-30 border-r px-4 py-3 min-w-[220px] w-[220px] ${stickyCellClassName}`}
             style={{
               left: DFC_COLUMN_WIDTH + CONTA_COLUMN_WIDTH,
               boxShadow: lastStickyShadow,
             }}
           >
-            {row.level === 'subconta' ? row.subconta : null}
+            {row.level === 'subconta' ? (
+              row.subconta
+            ) : row.level === 'conta' && showInlineTotal ? (
+              <div className="pl-6">{renderTotalLabel()}</div>
+            ) : null}
           </td>
         )}
 
@@ -396,6 +440,20 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-slate-50 px-4 py-3">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+          Exibicao
+        </span>
+        <button className={controlButtonClassName} onClick={() => setExpansionMode('dfc')}>
+          Somente DFC
+        </button>
+        <button className={controlButtonClassName} onClick={() => setExpansionMode('contas')}>
+          Abrir Contas
+        </button>
+        <button className={controlButtonClassName} onClick={() => setExpansionMode('subcontas')}>
+          Abrir Subcontas
+        </button>
+      </div>
       <div className="overflow-auto max-h-[calc(100vh-280px)]" style={{ maxWidth: '100%' }}>
         <table className="w-full text-sm border-separate border-spacing-0">
           <thead className="sticky top-0 z-40">
