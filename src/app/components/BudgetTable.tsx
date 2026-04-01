@@ -10,6 +10,10 @@ interface BudgetTableProps {
   onDataChange: (data: BudgetRow[]) => void;
   startMonth: number;
   endMonth: number;
+  filters: {
+    businessGroup: string;
+    businessUnit: string;
+  };
 }
 
 const DFC_COLUMN_WIDTH = 180;
@@ -38,13 +42,27 @@ const highlightedRows = new Set([
   "Resultado Liquido",
 ]);
 
-function getZeroPropostaCount(row: BudgetRow): number {
+function isMonthVisible(month: number, startMonth: number, endMonth: number) {
+  return month >= startMonth && month <= endMonth;
+}
+
+function getZeroPropostaCount(
+  row: BudgetRow,
+  startMonth: number,
+  endMonth: number,
+): number {
   let count = 0;
 
   const visit = (current: BudgetRow) => {
     if (current.level === "subconta") {
-      const hasZero = Object.values(current.monthlyData).some(
-        (monthData) => monthData.proposta === 0,
+      const hasZero = Object.entries(current.monthlyData).some(
+        ([monthKey, monthData]) => {
+          const month = Number(monthKey);
+          return (
+            isMonthVisible(month, startMonth, endMonth) &&
+            monthData.proposta === 0
+          );
+        },
       );
 
       if (hasZero) {
@@ -61,14 +79,22 @@ function getZeroPropostaCount(row: BudgetRow): number {
   return count;
 }
 
-function getZeroPropostaMonths(row: BudgetRow): number[] {
+function getZeroPropostaMonths(
+  row: BudgetRow,
+  startMonth: number,
+  endMonth: number,
+): number[] {
   const months = new Set<number>();
 
   const visit = (current: BudgetRow) => {
     if (current.level === "subconta") {
       Object.entries(current.monthlyData).forEach(([monthKey, monthData]) => {
         const month = Number(monthKey);
-        if (monthData.proposta === 0) {
+
+        if (
+          isMonthVisible(month, startMonth, endMonth) &&
+          monthData.proposta === 0
+        ) {
           months.add(month);
         }
       });
@@ -330,16 +356,19 @@ export function BudgetTable({
   }, [data]);
 
   const zeroPropostaByGroup = useMemo(() => {
-    const map = new Map<string, {
-      count: number;
-      months: number[];
-    }>();
+    const map = new Map<
+      string,
+      {
+        count: number;
+        months: number[];
+      }
+    >();
 
     const visit = (row: BudgetRow) => {
       if (row.level === "dfc" && row.children?.length) {
         map.set(row.id, {
-          count: getZeroPropostaCount(row),
-          months: getZeroPropostaMonths(row),
+          count: getZeroPropostaCount(row, startMonth, endMonth),
+          months: getZeroPropostaMonths(row, startMonth, endMonth),
         });
       }
 
@@ -348,7 +377,7 @@ export function BudgetTable({
 
     data.forEach(visit);
     return map;
-  }, [data]);
+  }, [data, startMonth, endMonth]);
 
   const getZeroPropostaCountForGroup = (groupId: string) =>
     zeroPropostaByGroup.get(groupId)?.count ?? 0;

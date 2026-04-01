@@ -137,6 +137,7 @@ export default function App() {
               onDataChange={setBudgetData}
               startMonth={filters.startMonth}
               endMonth={filters.endMonth}
+              filters={filters}
             />
           )}
         </div>
