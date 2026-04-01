@@ -1,9 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { BudgetHeader } from './components/BudgetHeader';
 import { BudgetFilters } from './components/BudgetFilters';
 import { BudgetTable } from './components/BudgetTable';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './components/ui/dialog';
+import { Button } from './components/ui/button';
 import { generateMockData } from './data/mockData';
 import { BudgetRow } from './types/budget';
 
@@ -48,9 +51,25 @@ export default function App() {
     });
   };
 
-  const handleSave = () => {
-    console.log('Salvando dados...', budgetData);
-    alert('Dados salvos com sucesso!');
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleOpenSaveModal = () => setIsSaveModalOpen(true);
+  const handleCloseSaveModal = () => setIsSaveModalOpen(false);
+
+  const handleConfirmSave = () => {
+    setIsSaving(true);
+
+    try {
+      console.log('Salvando dados...', budgetData);
+      toast.success('Dados salvos com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar dados:', error);
+      toast.error('Nao foi possivel salvar os dados.');
+    } finally {
+      setIsSaving(false);
+      setIsSaveModalOpen(false);
+    }
   };
 
   const handleSearch = () => {
@@ -76,9 +95,32 @@ export default function App() {
           filters={filters}
           onFilterChange={handleFilterChange}
           onClear={handleClear}
-          onSave={handleSave}
+          onSave={handleOpenSaveModal}
           onSearch={handleSearch}
         />
+
+        <Dialog open={isSaveModalOpen} onOpenChange={setIsSaveModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar salvamento</DialogTitle>
+              <DialogDescription>
+                Deseja salvar as alterações realizadas?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={handleCloseSaveModal}
+                disabled={isSaving}
+              >
+                Cancelar
+              </Button>
+              <Button onClick={handleConfirmSave} disabled={isSaving}>
+                {isSaving ? 'Salvando...' : 'Confirmar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <div className="mt-6">
           {loadError ? (

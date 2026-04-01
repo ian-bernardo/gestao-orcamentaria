@@ -1,6 +1,8 @@
-import { ReactElement, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Pencil } from 'lucide-react';
-import { BudgetRow, MonthlyData } from '../types/budget';
+'use client';
+import { ReactElement, useMemo, useState } from "react";
+import toast from "react-hot-toast";
+import { ChevronDown, ChevronRight, Pencil } from "lucide-react";
+import { BudgetRow, MonthlyData } from "../types/budget";
 
 interface BudgetTableProps {
   data: BudgetRow[];
@@ -14,29 +16,79 @@ const CONTA_COLUMN_WIDTH = 200;
 const SUBCONTA_COLUMN_WIDTH = 220;
 
 const monthNames = [
-  'Janeiro',
-  'Fevereiro',
-  'Marco',
-  'Abril',
-  'Maio',
-  'Junho',
-  'Julho',
-  'Agosto',
-  'Setembro',
-  'Outubro',
-  'Novembro',
-  'Dezembro',
+  "Janeiro",
+  "Fevereiro",
+  "Marco",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
 ];
 
 const highlightedRows = new Set([
-  'Receita',
-  'Margem Bruta',
-  'Resultado Operacional',
-  'Resultado Liquido',
+  "Receita",
+  "Margem Bruta",
+  "Resultado Operacional",
+  "Resultado Liquido",
 ]);
 
+interface ConfirmationModalProps {
+  open: boolean;
+  title: string;
+  description: string;
+  onConfirm: () => void;
+  onClose: () => void;
+  isLoading: boolean;
+}
+
+function ConfirmationModal({
+  open,
+  title,
+  description,
+  onConfirm,
+  onClose,
+  isLoading,
+}: ConfirmationModalProps) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl transition duration-200 ease-out transform">
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+        <div className="mt-6 flex flex-wrap gap-3 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+            disabled={isLoading}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isLoading}
+          >
+            {isLoading ? "Aguarde..." : "Confirmar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function createEmptyMonthlyData(): Record<number, MonthlyData> {
-  const monthlyData: Record<number, MonthlyData> = {} as Record<number, MonthlyData>;
+  const monthlyData: Record<number, MonthlyData> = {} as Record<
+    number,
+    MonthlyData
+  >;
 
   for (let month = 1; month <= 12; month++) {
     monthlyData[month] = {
@@ -52,7 +104,7 @@ function createEmptyMonthlyData(): Record<number, MonthlyData> {
 function combineMonthlyData(
   first: Record<number, MonthlyData>,
   second: Record<number, MonthlyData>,
-  operator: 1 | -1
+  operator: 1 | -1,
 ): Record<number, MonthlyData> {
   const result = createEmptyMonthlyData();
 
@@ -69,12 +121,13 @@ function combineMonthlyData(
 
 function sumChildrenMonthlyData(
   row: BudgetRow,
-  computedDataById: Map<string, Record<number, MonthlyData>>
+  computedDataById: Map<string, Record<number, MonthlyData>>,
 ): Record<number, MonthlyData> {
   const total = createEmptyMonthlyData();
 
   row.children?.forEach((child) => {
-    const childMonthlyData = computedDataById.get(child.id) ?? child.monthlyData;
+    const childMonthlyData =
+      computedDataById.get(child.id) ?? child.monthlyData;
 
     for (let month = 1; month <= 12; month++) {
       total[month] = {
@@ -90,7 +143,7 @@ function sumChildrenMonthlyData(
 
 function buildRowComputedData(
   row: BudgetRow,
-  computedDataById: Map<string, Record<number, MonthlyData>>
+  computedDataById: Map<string, Record<number, MonthlyData>>,
 ): Record<number, MonthlyData> {
   if (!row.children?.length) {
     computedDataById.set(row.id, row.monthlyData);
@@ -109,21 +162,30 @@ function buildRowComputedData(
 function collectDescendantIds(row: BudgetRow): string[] {
   if (!row.children?.length) return [];
 
-  return row.children.flatMap((child) => [child.id, ...collectDescendantIds(child)]);
+  return row.children.flatMap((child) => [
+    child.id,
+    ...collectDescendantIds(child),
+  ]);
 }
 
-export function BudgetTable({ data, onDataChange, startMonth, endMonth }: BudgetTableProps) {
+export function BudgetTable({
+  data,
+  onDataChange,
+  startMonth,
+  endMonth,
+}: BudgetTableProps) {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(
-    new Set(data.filter((row) => row.isExpanded).map((row) => row.id))
+    new Set(data.filter((row) => row.isExpanded).map((row) => row.id)),
   );
 
   const dfcRowIds = data
-    .filter((row) => row.level === 'dfc' && row.children?.length)
+    .filter((row) => row.level === "dfc" && row.children?.length)
     .map((row) => row.id);
-  const contaRowIds = data.flatMap((row) =>
-    row.children
-      ?.filter((child) => child.level === 'conta' && child.children?.length)
-      .map((child) => child.id) ?? []
+  const contaRowIds = data.flatMap(
+    (row) =>
+      row.children
+        ?.filter((child) => child.level === "conta" && child.children?.length)
+        .map((child) => child.id) ?? [],
   );
   const rowById = useMemo(() => {
     const map = new Map<string, BudgetRow>();
@@ -146,7 +208,9 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
         next.delete(rowId);
         row?.children?.forEach((child) => {
           next.delete(child.id);
-          collectDescendantIds(child).forEach((descendantId) => next.delete(descendantId));
+          collectDescendantIds(child).forEach((descendantId) =>
+            next.delete(descendantId),
+          );
         });
       } else {
         next.add(rowId);
@@ -156,13 +220,13 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     });
   };
 
-  const setExpansionMode = (mode: 'dfc' | 'contas' | 'subcontas') => {
-    if (mode === 'dfc') {
+  const setExpansionMode = (mode: "dfc" | "contas" | "subcontas") => {
+    if (mode === "dfc") {
       setExpandedRows(new Set());
       return;
     }
 
-    if (mode === 'contas') {
+    if (mode === "contas") {
       setExpandedRows(new Set(dfcRowIds));
       return;
     }
@@ -177,44 +241,53 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
       buildRowComputedData(row, map);
     });
 
-    const receita = map.get('receita') ?? createEmptyMonthlyData();
-    const custo = map.get('custo') ?? createEmptyMonthlyData();
-    const imposto = map.get('imposto') ?? createEmptyMonthlyData();
-    const despesa = map.get('despesa') ?? createEmptyMonthlyData();
-    const investimento = map.get('investimento') ?? createEmptyMonthlyData();
+    const receita = map.get("receita") ?? createEmptyMonthlyData();
+    const custo = map.get("custo") ?? createEmptyMonthlyData();
+    const imposto = map.get("imposto") ?? createEmptyMonthlyData();
+    const despesa = map.get("despesa") ?? createEmptyMonthlyData();
+    const investimento = map.get("investimento") ?? createEmptyMonthlyData();
 
     const margemBruta = combineMonthlyData(
       combineMonthlyData(receita, custo, -1),
       imposto,
-      -1
+      -1,
     );
     const resultadoOperacional = combineMonthlyData(margemBruta, despesa, -1);
-    const resultadoLiquido = combineMonthlyData(resultadoOperacional, investimento, -1);
+    const resultadoLiquido = combineMonthlyData(
+      resultadoOperacional,
+      investimento,
+      -1,
+    );
 
-    map.set('margem-bruta', margemBruta);
-    map.set('resultado-operacional', resultadoOperacional);
-    map.set('resultado-liquido', resultadoLiquido);
+    map.set("margem-bruta", margemBruta);
+    map.set("resultado-operacional", resultadoOperacional);
+    map.set("resultado-liquido", resultadoLiquido);
 
     return map;
   }, [data]);
 
-  const showContaColumn = data.some((row) => row.children?.length && expandedRows.has(row.id));
+  const showContaColumn = data.some(
+    (row) => row.children?.length && expandedRows.has(row.id),
+  );
   const showSubcontaColumn = data.some(
     (row) =>
       expandedRows.has(row.id) &&
       row.children?.some(
-        (child) => child.level === 'conta' && child.children?.length && expandedRows.has(child.id)
-      )
+        (child) =>
+          child.level === "conta" &&
+          child.children?.length &&
+          expandedRows.has(child.id),
+      ),
   );
 
   const formatNumber = (num: number) =>
-    new Intl.NumberFormat('pt-BR', {
+    new Intl.NumberFormat("pt-BR", {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(num);
 
   const formatPercent = (num: number) =>
-    `${new Intl.NumberFormat('pt-BR', {
+    `${new Intl.NumberFormat("pt-BR", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(num)}%`;
@@ -227,10 +300,10 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
   const handleValueChange = (
     rowId: string,
     month: number,
-    field: 'proposta' | 'orcamento',
-    value: string
+    field: "proposta" | "orcamento",
+    value: string,
   ) => {
-    const numValue = parseFloat(value.replace(/\D/g, '')) || 0;
+    const numValue = parseFloat(value.replace(/\D/g, "")) || 0;
 
     const updateRow = (row: BudgetRow): BudgetRow => {
       if (row.id === rowId) {
@@ -259,20 +332,164 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     onDataChange(data.map(updateRow));
   };
 
+  const updateMonthlyDataRows = (
+    rows: BudgetRow[],
+    updater: (monthData: MonthlyData) => MonthlyData,
+  ): BudgetRow[] => {
+    return rows.map((row) => ({
+      ...row,
+      monthlyData: Object.fromEntries(
+        Object.entries(row.monthlyData).map(([month, monthData]) => [
+          month,
+          updater(monthData),
+        ]),
+      ) as { [month: number]: MonthlyData },
+      children: row.children
+        ? updateMonthlyDataRows(row.children, updater)
+        : row.children,
+    }));
+  };
+
+  const [confirmationState, setConfirmationState] = useState<{
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const [isActionLoading, setIsActionLoading] = useState(false);
+
+  const showSuccessToast = (message: string) =>
+    toast.success(message, { position: "top-right", duration: 3000 });
+
+  const showErrorToast = (message: string) =>
+    toast.error(message, { position: "top-right", duration: 3000 });
+
+  const openConfirmationModal = (
+    title: string,
+    description: string,
+    onConfirm: () => void,
+  ) => {
+    setConfirmationState({ title, description, onConfirm });
+  };
+
+  const closeConfirmationModal = () => setConfirmationState(null);
+
+  const performAction = (
+    action: () => void,
+    successMessage: string,
+  ) => {
+    setIsActionLoading(true);
+
+    try {
+      action();
+      showSuccessToast(successMessage);
+    } catch (error) {
+      console.error("Erro ao executar operação:", error);
+      showErrorToast("Não foi possível realizar a operação.");
+    } finally {
+      setIsActionLoading(false);
+      closeConfirmationModal();
+    }
+  };
+
+  const performCopy = (
+    sourceField: "anterior" | "proposta" | "orcamento",
+    targetField: "anterior" | "proposta" | "orcamento",
+    successMessage: string,
+  ) => {
+    performAction(
+      () =>
+        onDataChange(
+          updateMonthlyDataRows(data, (monthData) => ({
+            ...monthData,
+            [targetField]: monthData[sourceField],
+          })),
+        ),
+      successMessage,
+    );
+  };
+
+  const copyAnteriorToProposta = () =>
+    openConfirmationModal(
+      "Confirmar ação",
+      "Deseja copiar os valores de Anterior para Proposta?",
+      () =>
+        performCopy(
+          "anterior",
+          "proposta",
+          "Dados copiados com sucesso!",
+        ),
+    );
+
+  const copyPropostaToOrcamento = () =>
+    openConfirmationModal(
+      "Confirmar ação",
+      "Deseja copiar os valores de Proposta para Orçamento?",
+      () =>
+        performCopy(
+          "proposta",
+          "orcamento",
+          "Dados copiados com sucesso!",
+        ),
+    );
+
+  const handleResetPropostaOrcamento = () =>
+    openConfirmationModal(
+      "Confirmar ação",
+      "Deseja zerar todos os valores de Proposta e Orçamento?",
+      () =>
+        performAction(
+          () =>
+            onDataChange(
+              updateMonthlyDataRows(data, (monthData) => ({
+                ...monthData,
+                proposta: 0,
+                orcamento: 0,
+              })),
+            ),
+          "Operação realizada com sucesso!",
+        ),
+    );
+
+  const handleFillPropostaOrcamento = () =>
+    openConfirmationModal(
+      "Confirmar ação",
+      "Deseja preencher todos os valores de Proposta e Orçamento para teste?",
+      () =>
+        performAction(
+          () =>
+            onDataChange(
+              updateMonthlyDataRows(data, (monthData) => {
+                const fillValue = monthData.anterior || 1000;
+                return {
+                  ...monthData,
+                  proposta: fillValue,
+                  orcamento: fillValue,
+                };
+              }),
+            ),
+          "Operação realizada com sucesso!",
+        ),
+    );
+
   const visibleMonths = Array.from(
     { length: endMonth - startMonth + 1 },
-    (_, index) => startMonth + index
+    (_, index) => startMonth + index,
   );
-  const lastStickyShadow = '8px 0 10px -12px rgba(15, 23, 42, 0.22)';
+  const lastStickyShadow = "8px 0 10px -12px rgba(15, 23, 42, 0.22)";
   const controlButtonClassName =
-    'rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900';
+    "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900";
 
   const renderToggle = (rowId: string, isExpanded: boolean) => (
     <button
       onClick={() => toggleRow(rowId)}
       className="hover:bg-gray-200 rounded p-0.5 transition-colors"
     >
-      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      {isExpanded ? (
+        <ChevronDown className="h-4 w-4" />
+      ) : (
+        <ChevronRight className="h-4 w-4" />
+      )}
     </button>
   );
 
@@ -288,35 +505,36 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
     const hasChildren = Boolean(row.children?.length);
     const isSummaryRow = highlightedRows.has(row.dfc);
     const isLeafRow = !hasChildren;
-    const isRevenueEditable = row.id === 'receita';
-    const canEditValues = (row.editable && isLeafRow && !isSummaryRow) || isRevenueEditable;
-    const hidePercentages = row.dfc === 'Receita';
+    const isRevenueEditable = row.id === "receita";
+    const canEditValues =
+      (row.editable && isLeafRow && !isSummaryRow) || isRevenueEditable;
+    const hidePercentages = row.dfc === "Receita";
     const showInlineTotal = isExpanded && hasChildren && !isSummaryRow;
     const outerDividerClassName = showInlineTotal
-      ? 'border-slate-300'
+      ? "border-slate-300"
       : isSummaryRow
-        ? 'border-white/20'
-        : 'border-gray-200';
+        ? "border-white/20"
+        : "border-gray-200";
     const innerDividerClassName = showInlineTotal
-      ? 'border-slate-300'
+      ? "border-slate-300"
       : isSummaryRow
-        ? 'border-white/15'
-        : 'border-gray-100';
+        ? "border-white/15"
+        : "border-gray-100";
     const rowClassName = isSummaryRow
-      ? 'bg-[#0066A1] text-white font-semibold'
+      ? "bg-[#0066A1] text-white font-semibold"
       : showInlineTotal
-        ? 'bg-[#cbd5e1] text-slate-950 font-semibold'
-      : 'bg-white text-gray-900';
+        ? "bg-[#cbd5e1] text-slate-950 font-semibold"
+        : "bg-white text-gray-900";
     const stickyCellClassName = isSummaryRow
-      ? 'bg-[#0066A1] text-white'
+      ? "bg-[#0066A1] text-white"
       : showInlineTotal
-        ? 'bg-[#cbd5e1] text-slate-950 font-semibold'
-      : 'bg-white text-gray-900';
+        ? "bg-[#cbd5e1] text-slate-950 font-semibold"
+        : "bg-white text-gray-900";
     const totalColumnClassName = isSummaryRow
-      ? 'bg-[#0066A1] text-white border-r border-white/20 p-0'
+      ? "bg-[#0066A1] text-white border-r border-white/20 p-0"
       : showInlineTotal
-        ? 'bg-[#cbd5e1] text-slate-950 font-semibold border-r border-slate-300 p-0'
-      : 'bg-white text-gray-900 border-r border-gray-200 p-0';
+        ? "bg-[#cbd5e1] text-slate-950 font-semibold border-r border-slate-300 p-0"
+        : "bg-white text-gray-900 border-r border-gray-200 p-0";
 
     const rows: ReactElement[] = [
       <tr key={row.id} className={`${rowClassName} border-b border-gray-200`}>
@@ -327,10 +545,12 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
             boxShadow: !showContaColumn ? lastStickyShadow : undefined,
           }}
         >
-          {row.level === 'dfc' ? (
+          {row.level === "dfc" ? (
             <div className="flex items-center gap-2">
               {hasChildren && renderToggle(row.id, isExpanded)}
-              <span className={isSummaryRow ? 'font-semibold' : ''}>{row.dfc}</span>
+              <span className={isSummaryRow ? "font-semibold" : ""}>
+                {row.dfc}
+              </span>
             </div>
           ) : null}
         </td>
@@ -343,12 +563,12 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
               boxShadow: !showSubcontaColumn ? lastStickyShadow : undefined,
             }}
           >
-            {row.level === 'conta' ? (
+            {row.level === "conta" ? (
               <div className="flex items-center gap-2">
                 {hasChildren && renderToggle(row.id, isExpanded)}
                 <span>{row.conta}</span>
               </div>
-            ) : row.level === 'dfc' && showInlineTotal ? (
+            ) : row.level === "dfc" && showInlineTotal ? (
               <div className="pl-6">{renderTotalLabel()}</div>
             ) : null}
           </td>
@@ -362,9 +582,9 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
               boxShadow: lastStickyShadow,
             }}
           >
-            {row.level === 'subconta' ? (
+            {row.level === "subconta" ? (
               row.subconta
-            ) : row.level === 'conta' && showInlineTotal ? (
+            ) : row.level === "conta" && showInlineTotal ? (
               <div className="pl-6">{renderTotalLabel()}</div>
             ) : null}
           </td>
@@ -372,33 +592,54 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
 
         {visibleMonths.map((month) => {
           const monthData = rowMonthlyData[month];
-          const percentAnterior = calculatePercent(monthData.proposta, monthData.anterior);
-          const percentProposta = calculatePercent(monthData.orcamento, monthData.proposta);
+          const percentAnterior = calculatePercent(
+            monthData.proposta,
+            monthData.anterior,
+          );
+          const percentProposta = calculatePercent(
+            monthData.orcamento,
+            monthData.proposta,
+          );
 
           return (
-            <td key={`${row.id}-month-${month}`} colSpan={5} className={`p-0 border-r ${outerDividerClassName}`}>
+            <td
+              key={`${row.id}-month-${month}`}
+              colSpan={5}
+              className={`p-0 border-r ${outerDividerClassName}`}
+            >
               <div className="flex">
-                <div className={`flex-1 px-3 py-3 text-right border-r min-w-[100px] ${innerDividerClassName}`}>
+                <div
+                  className={`flex-1 px-3 py-3 text-right border-r min-w-[100px] ${innerDividerClassName}`}
+                >
                   <span>{formatNumber(monthData.anterior)}</span>
                 </div>
 
-                <div className={`flex-1 px-3 py-3 text-right border-r min-w-[80px] text-sm ${innerDividerClassName}`}>
-                  {hidePercentages ? '' : formatPercent(percentAnterior)}
+                <div
+                  className={`flex-1 px-3 py-3 text-right border-r min-w-[80px] text-sm ${innerDividerClassName}`}
+                >
+                  {hidePercentages ? "" : formatPercent(percentAnterior)}
                 </div>
 
-                <div className={`flex-1 px-3 py-3 text-right border-r min-w-[100px] ${innerDividerClassName}`}>
+                <div
+                  className={`flex-1 px-3 py-3 text-right border-r min-w-[100px] ${innerDividerClassName}`}
+                >
                   {canEditValues ? (
                     <div className="relative">
                       <input
                         type="text"
                         value={formatNumber(monthData.proposta)}
                         onChange={(event) =>
-                          handleValueChange(row.id, month, 'proposta', event.target.value)
+                          handleValueChange(
+                            row.id,
+                            month,
+                            "proposta",
+                            event.target.value,
+                          )
                         }
                         className={`w-full text-right border-none outline-none rounded px-1 pr-4 ${
                           isRevenueEditable
-                            ? 'bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900'
-                            : 'bg-transparent text-inherit focus:bg-blue-50'
+                            ? "bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900"
+                            : "bg-transparent text-inherit focus:bg-blue-50"
                         }`}
                       />
                       <Pencil className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
@@ -408,8 +649,10 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
                   )}
                 </div>
 
-                <div className={`flex-1 px-3 py-3 text-right border-r min-w-[80px] text-sm ${innerDividerClassName}`}>
-                  {hidePercentages ? '' : formatPercent(percentProposta)}
+                <div
+                  className={`flex-1 px-3 py-3 text-right border-r min-w-[80px] text-sm ${innerDividerClassName}`}
+                >
+                  {hidePercentages ? "" : formatPercent(percentProposta)}
                 </div>
 
                 <div className="flex-1 px-3 py-3 text-right min-w-[100px]">
@@ -419,12 +662,17 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
                         type="text"
                         value={formatNumber(monthData.orcamento)}
                         onChange={(event) =>
-                          handleValueChange(row.id, month, 'orcamento', event.target.value)
+                          handleValueChange(
+                            row.id,
+                            month,
+                            "orcamento",
+                            event.target.value,
+                          )
                         }
                         className={`w-full text-right border-none outline-none rounded px-1 pr-4 ${
                           isRevenueEditable
-                            ? 'bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900'
-                            : 'bg-transparent text-inherit focus:bg-blue-50'
+                            ? "bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900"
+                            : "bg-transparent text-inherit focus:bg-blue-50"
                         }`}
                       />
                       <Pencil className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
@@ -438,20 +686,24 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
           );
         })}
 
-        {(['anterior', 'proposta', 'orcamento'] as const).map((field) => {
+        {(["anterior", "proposta", "orcamento"] as const).map((field) => {
           const totalValue = Object.values(rowMonthlyData).reduce(
             (sum, monthData) => sum + monthData[field],
-            0
+            0,
           );
 
           return (
-            <td key={`${row.id}-${field}-total`} colSpan={2} className={totalColumnClassName}>
+            <td
+              key={`${row.id}-${field}-total`}
+              colSpan={2}
+              className={totalColumnClassName}
+            >
               <div className="flex">
                 <div className="flex-1 px-3 py-3 text-right min-w-[100px]">
                   {formatNumber(totalValue)}
                 </div>
                 <div className="flex-1 px-3 py-3 text-right min-w-[80px]">
-                  {hidePercentages ? '' : formatPercent(0)}
+                  {hidePercentages ? "" : formatPercent(0)}
                 </div>
               </div>
             </td>
@@ -464,12 +716,12 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
               {formatNumber(
                 Object.values(rowMonthlyData).reduce(
                   (sum, monthData) => sum + monthData.orcamento,
-                  0
-                ) / visibleMonths.length
+                  0,
+                ) / visibleMonths.length,
               )}
             </div>
             <div className="flex-1 px-3 py-3 text-right min-w-[80px]">
-              {hidePercentages ? '' : formatPercent(0)}
+              {hidePercentages ? "" : formatPercent(0)}
             </div>
           </div>
         </td>
@@ -491,17 +743,61 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
         <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
           Exibicao
         </span>
-        <button className={controlButtonClassName} onClick={() => setExpansionMode('dfc')}>
+        <button
+          className={controlButtonClassName}
+          onClick={() => setExpansionMode("dfc")}
+        >
           Somente DFC
         </button>
-        <button className={controlButtonClassName} onClick={() => setExpansionMode('contas')}>
+        <button
+          className={controlButtonClassName}
+          onClick={() => setExpansionMode("contas")}
+        >
           Abrir Contas
         </button>
-        <button className={controlButtonClassName} onClick={() => setExpansionMode('subcontas')}>
+        <button
+          className={controlButtonClassName}
+          onClick={() => setExpansionMode("subcontas")}
+        >
           Abrir Subcontas
         </button>
+        <button
+          className={controlButtonClassName}
+          onClick={copyAnteriorToProposta}
+        >
+          Copiar Anterior → Proposta
+        </button>
+        <button
+          className={controlButtonClassName}
+          onClick={copyPropostaToOrcamento}
+        >
+          Copiar Proposta → Orçamento
+        </button>
+        <button
+          className={`${controlButtonClassName} bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100`}
+          onClick={handleResetPropostaOrcamento}
+        >
+          Zerar Proposta e Orçamento
+        </button>
+        <button
+          className={`${controlButtonClassName} bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100`}
+          onClick={handleFillPropostaOrcamento}
+        >
+          Preencher Proposta e Orçamento
+        </button>
       </div>
-      <div className="overflow-auto max-h-[calc(100vh-280px)]" style={{ maxWidth: '100%' }}>
+      <ConfirmationModal
+        open={Boolean(confirmationState)}
+        title={confirmationState?.title ?? "Confirmar ação"}
+        description={confirmationState?.description ?? "Deseja confirmar essa ação?"}
+        onConfirm={() => confirmationState?.onConfirm()}
+        onClose={closeConfirmationModal}
+        isLoading={isActionLoading}
+      />
+      <div
+        className="overflow-auto max-h-[calc(100vh-280px)]"
+        style={{ maxWidth: "100%" }}
+      >
         <table className="w-full text-sm border-separate border-spacing-0">
           <thead className="sticky top-0 z-40">
             <tr className="bg-[#0066A1] text-white border-b border-white">
@@ -522,7 +818,9 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
                   style={{
                     left: DFC_COLUMN_WIDTH,
                     width: CONTA_COLUMN_WIDTH,
-                    boxShadow: !showSubcontaColumn ? lastStickyShadow : undefined,
+                    boxShadow: !showSubcontaColumn
+                      ? lastStickyShadow
+                      : undefined,
                   }}
                 >
                   Conta
@@ -552,16 +850,28 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
                 </th>
               ))}
 
-              <th colSpan={2} className="bg-[#0066A1] px-4 py-3 text-center border-r border-white font-semibold">
+              <th
+                colSpan={2}
+                className="bg-[#0066A1] px-4 py-3 text-center border-r border-white font-semibold"
+              >
                 Total Anterior
               </th>
-              <th colSpan={2} className="bg-[#0066A1] px-4 py-3 text-center border-r border-white font-semibold">
+              <th
+                colSpan={2}
+                className="bg-[#0066A1] px-4 py-3 text-center border-r border-white font-semibold"
+              >
                 Total Proposta
               </th>
-              <th colSpan={2} className="bg-[#0066A1] px-4 py-3 text-center border-r border-white font-semibold">
+              <th
+                colSpan={2}
+                className="bg-[#0066A1] px-4 py-3 text-center border-r border-white font-semibold"
+              >
                 Total Orcamento
               </th>
-              <th colSpan={2} className="bg-[#0066A1] px-4 py-3 text-center border-r border-white font-semibold">
+              <th
+                colSpan={2}
+                className="bg-[#0066A1] px-4 py-3 text-center border-r border-white font-semibold"
+              >
                 Media Mensal Orcamentaria
               </th>
             </tr>
@@ -582,7 +892,9 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
                   style={{
                     left: DFC_COLUMN_WIDTH,
                     width: CONTA_COLUMN_WIDTH,
-                    boxShadow: !showSubcontaColumn ? lastStickyShadow : undefined,
+                    boxShadow: !showSubcontaColumn
+                      ? lastStickyShadow
+                      : undefined,
                   }}
                 ></th>
               )}
@@ -599,38 +911,72 @@ export function BudgetTable({ data, onDataChange, startMonth, endMonth }: Budget
               )}
 
               {visibleMonths.map((month) => (
-                <th key={`header-${month}`} colSpan={5} className="bg-[#3399CC] p-0 border-r border-white">
+                <th
+                  key={`header-${month}`}
+                  colSpan={5}
+                  className="bg-[#3399CC] p-0 border-r border-white"
+                >
                   <div className="flex text-center">
-                    <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">Anterior R$</div>
-                    <div className="flex-1 px-2 py-2 border-r border-white min-w-[80px]">%</div>
-                    <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">Proposta R$</div>
-                    <div className="flex-1 px-2 py-2 border-r border-white min-w-[80px]">%</div>
-                    <div className="flex-1 px-2 py-2 min-w-[100px]">Orcamento</div>
+                    <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">
+                      Anterior R$
+                    </div>
+                    <div className="flex-1 px-2 py-2 border-r border-white min-w-[80px]">
+                      %
+                    </div>
+                    <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">
+                      Proposta R$
+                    </div>
+                    <div className="flex-1 px-2 py-2 border-r border-white min-w-[80px]">
+                      %
+                    </div>
+                    <div className="flex-1 px-2 py-2 min-w-[100px]">
+                      Orcamento
+                    </div>
                   </div>
                 </th>
               ))}
 
-              <th colSpan={2} className="bg-[#3399CC] p-0 border-r border-white">
+              <th
+                colSpan={2}
+                className="bg-[#3399CC] p-0 border-r border-white"
+              >
                 <div className="flex text-center">
-                  <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">R$</div>
+                  <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">
+                    R$
+                  </div>
                   <div className="flex-1 px-2 py-2 min-w-[80px]">%</div>
                 </div>
               </th>
-              <th colSpan={2} className="bg-[#3399CC] p-0 border-r border-white">
+              <th
+                colSpan={2}
+                className="bg-[#3399CC] p-0 border-r border-white"
+              >
                 <div className="flex text-center">
-                  <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">R$</div>
+                  <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">
+                    R$
+                  </div>
                   <div className="flex-1 px-2 py-2 min-w-[80px]">%</div>
                 </div>
               </th>
-              <th colSpan={2} className="bg-[#3399CC] p-0 border-r border-white">
+              <th
+                colSpan={2}
+                className="bg-[#3399CC] p-0 border-r border-white"
+              >
                 <div className="flex text-center">
-                  <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">R$</div>
+                  <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">
+                    R$
+                  </div>
                   <div className="flex-1 px-2 py-2 min-w-[80px]">%</div>
                 </div>
               </th>
-              <th colSpan={2} className="bg-[#3399CC] p-0 border-r border-white">
+              <th
+                colSpan={2}
+                className="bg-[#3399CC] p-0 border-r border-white"
+              >
                 <div className="flex text-center">
-                  <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">R$</div>
+                  <div className="flex-1 px-2 py-2 border-r border-white min-w-[100px]">
+                    R$
+                  </div>
                   <div className="flex-1 px-2 py-2 min-w-[80px]">%</div>
                 </div>
               </th>
