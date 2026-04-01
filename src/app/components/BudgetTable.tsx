@@ -3,6 +3,7 @@ import { ReactElement, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { ChevronDown, ChevronRight, Pencil } from "lucide-react";
 import { BudgetRow, MonthlyData } from "../types/budget";
+import { Tooltip } from "./ui/tooltip";
 
 interface BudgetTableProps {
   data: BudgetRow[];
@@ -36,6 +37,68 @@ const highlightedRows = new Set([
   "Resultado Operacional",
   "Resultado Liquido",
 ]);
+
+function getZeroPropostaCount(row: BudgetRow): number {
+  let count = 0;
+
+  const visit = (current: BudgetRow) => {
+    if (current.level === "subconta") {
+      const hasZero = Object.values(current.monthlyData).some(
+        (monthData) => monthData.proposta === 0,
+      );
+
+      if (hasZero) {
+        count += 1;
+      }
+
+      return;
+    }
+
+    current.children?.forEach(visit);
+  };
+
+  row.children?.forEach(visit);
+  return count;
+}
+
+function getZeroPropostaMonths(row: BudgetRow): number[] {
+  const months = new Set<number>();
+
+  const visit = (current: BudgetRow) => {
+    if (current.level === "subconta") {
+      Object.entries(current.monthlyData).forEach(([monthKey, monthData]) => {
+        const month = Number(monthKey);
+        if (monthData.proposta === 0) {
+          months.add(month);
+        }
+      });
+      return;
+    }
+
+    current.children?.forEach(visit);
+  };
+
+  row.children?.forEach(visit);
+  return Array.from(months).sort((a, b) => a - b);
+}
+
+function formatZeroPropostaTooltip(months: number[]) {
+  if (months.length === 12) {
+    return "Proposta zerada em todos os meses";
+  }
+
+  if (months.length > 4) {
+    return `Proposta zerada em ${months.length} meses`;
+  }
+
+  if (months.length === 1) {
+    return `Proposta zerada em ${monthNames[months[0] - 1]}`;
+  }
+
+  const labels = months.map((month) => monthNames[month - 1]);
+  const lastLabel = labels.pop();
+  return `Proposta zerada em ${labels.join(", ")} e ${lastLabel}`;
+}
 
 interface ConfirmationModalProps {
   open: boolean;
@@ -265,6 +328,33 @@ export function BudgetTable({
 
     return map;
   }, [data]);
+
+  const zeroPropostaByGroup = useMemo(() => {
+    const map = new Map<string, {
+      count: number;
+      months: number[];
+    }>();
+
+    const visit = (row: BudgetRow) => {
+      if (row.level === "dfc" && row.children?.length) {
+        map.set(row.id, {
+          count: getZeroPropostaCount(row),
+          months: getZeroPropostaMonths(row),
+        });
+      }
+
+      row.children?.forEach(visit);
+    };
+
+    data.forEach(visit);
+    return map;
+  }, [data]);
+
+  const getZeroPropostaCountForGroup = (groupId: string) =>
+    zeroPropostaByGroup.get(groupId)?.count ?? 0;
+
+  const getZeroPropostaMonthsForGroup = (groupId: string) =>
+    zeroPropostaByGroup.get(groupId)?.months ?? [];
 
   const showContaColumn = data.some(
     (row) => row.children?.length && expandedRows.has(row.id),
@@ -536,6 +626,19 @@ export function BudgetTable({
         ? "bg-[#cbd5e1] text-slate-950 font-semibold border-r border-slate-300 p-0"
         : "bg-white text-gray-900 border-r border-gray-200 p-0";
 
+    const zeroPropostaCount =
+      row.level === "dfc" && row.children?.length
+        ? getZeroPropostaCountForGroup(row.id)
+        : 0;
+    const zeroPropostaMonths =
+      row.level === "dfc" && zeroPropostaCount > 0
+        ? getZeroPropostaMonthsForGroup(row.id)
+        : [];
+    const zeroPropostaTooltip =
+      zeroPropostaMonths.length > 0
+        ? formatZeroPropostaTooltip(zeroPropostaMonths)
+        : undefined;
+
     const rows: ReactElement[] = [
       <tr key={row.id} className={`${rowClassName} border-b border-gray-200`}>
         <td
@@ -551,6 +654,13 @@ export function BudgetTable({
               <span className={isSummaryRow ? "font-semibold" : ""}>
                 {row.dfc}
               </span>
+              {zeroPropostaCount > 0 ? (
+                <Tooltip content={zeroPropostaTooltip} side="top" align="center">
+                  <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-100 px-2 text-xs font-semibold text-rose-600">
+                    {zeroPropostaCount}
+                  </span>
+                </Tooltip>
+              ) : null}
             </div>
           ) : null}
         </td>
