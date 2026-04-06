@@ -1,3 +1,4 @@
+import { BUSINESS_GROUPS, BUSINESS_UNITS } from '../../lib/business';
 import { BudgetRow } from '../types/budget';
 
 interface DFCStructure {
@@ -41,6 +42,13 @@ function createSummaryRow(id: string, dfc: string): BudgetRow {
   };
 }
 
+function getBusinessAssignment(index: number) {
+  return {
+    businessGroup: BUSINESS_GROUPS[index % BUSINESS_GROUPS.length],
+    businessUnit: BUSINESS_UNITS[index % BUSINESS_UNITS.length],
+  };
+}
+
 function buildBudgetRows(csvData: string): BudgetRow[] {
   const lines = csvData.split('\n');
   const structure: DFCStructure = {};
@@ -69,6 +77,7 @@ function buildBudgetRows(csvData: string): BudgetRow[] {
 
   const structuredRows = new Map<string, BudgetRow>();
   const dfcOrder = ['Custo', 'Imposto', 'Despesa', 'Investimento'];
+  let leafIndex = 0;
 
   dfcOrder.forEach((dfcName) => {
     if (!structure[dfcName]) return;
@@ -81,22 +90,32 @@ function buildBudgetRows(csvData: string): BudgetRow[] {
       const subcontaChildren: BudgetRow[] = [];
 
       subcontas.forEach((subcontaName) => {
+        const assignment = getBusinessAssignment(leafIndex);
+        leafIndex += 1;
+
         subcontaChildren.push({
           id: `${slugify(dfcName)}-${slugify(contaName)}-${slugify(subcontaName)}`,
           dfc: dfcName,
           conta: contaName,
           subconta: subcontaName,
+          businessGroup: assignment.businessGroup,
+          businessUnit: assignment.businessUnit,
           level: 'subconta',
           editable: true,
           monthlyData: generateMonthlyData(),
         });
       });
 
+      const fallbackAssignment = getBusinessAssignment(leafIndex);
+      const firstChild = subcontaChildren[0];
+
       children.push({
         id: `${slugify(dfcName)}-${slugify(contaName)}`,
         dfc: dfcName,
         conta: contaName,
         subconta: '',
+        businessGroup: firstChild?.businessGroup ?? fallbackAssignment.businessGroup,
+        businessUnit: firstChild?.businessUnit ?? fallbackAssignment.businessUnit,
         level: 'conta',
         editable: true,
         isExpanded: false,
@@ -110,6 +129,8 @@ function buildBudgetRows(csvData: string): BudgetRow[] {
       dfc: dfcName,
       conta: '',
       subconta: '',
+      businessGroup: children[0]?.businessGroup,
+      businessUnit: children[0]?.businessUnit,
       level: 'dfc',
       editable: true,
       isExpanded: true,

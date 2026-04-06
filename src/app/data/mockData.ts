@@ -1,5 +1,5 @@
-import { BudgetRow } from '../types/budget';
-import { parseCSVData } from '../utils/csvParser';
+import { BudgetRow } from '../budget/types/budget';
+import { parseCSVData } from '../budget/utils/csvParser';
 
 export async function generateMockData(): Promise<BudgetRow[]> {
   return parseCSVData();

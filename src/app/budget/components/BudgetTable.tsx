@@ -1,19 +1,28 @@
 'use client';
-import { ReactElement, useMemo, useState } from "react";
+import { forwardRef, ReactElement, useImperativeHandle, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { ChevronDown, ChevronRight, Pencil } from "lucide-react";
+import { ChevronDown, ChevronRight, Lock, Pencil } from "lucide-react";
 import { BudgetRow, MonthlyData } from "../types/budget";
-import { Tooltip } from "./ui/tooltip";
+import { Tooltip } from "../../shared/ui/tooltip";
 
 interface BudgetTableProps {
   data: BudgetRow[];
+  visibleData: BudgetRow[];
   onDataChange: (data: BudgetRow[]) => void;
+  onBaselineChange: (data: BudgetRow[]) => void;
+  onManualProposalEdit: (rowId: string, month: number) => void;
   startMonth: number;
   endMonth: number;
+  userType: 'gestor' | 'financeiro';
   filters: {
     businessGroup: string;
-    businessUnit: string;
+    businessUnits: string[];
   };
+}
+
+export interface BudgetTableActions {
+  openFillPropostaOrcamento: () => void;
+  openResetPropostaOrcamento: () => void;
 }
 
 const DFC_COLUMN_WIDTH = 180;
@@ -46,10 +55,33 @@ function isMonthVisible(month: number, startMonth: number, endMonth: number) {
   return month >= startMonth && month <= endMonth;
 }
 
+function getDisplayedPropostaValue(
+  monthData: MonthlyData,
+  _userType: "gestor" | "financeiro",
+) {
+  return monthData.proposta;
+}
+
+function isPendingForUserType(
+  monthData: MonthlyData,
+  userType: "gestor" | "financeiro",
+) {
+  if (userType === "gestor") {
+    const displayedProposta = getDisplayedPropostaValue(monthData, userType);
+    return (
+      displayedProposta === 0 &&
+      (userType === "gestor" || monthData.changeType != null)
+    );
+  }
+
+  return monthData.orcamento === 0;
+}
+
 function getZeroPropostaCount(
   row: BudgetRow,
   startMonth: number,
   endMonth: number,
+  userType: "gestor" | "financeiro",
 ): number {
   let count = 0;
 
@@ -58,10 +90,9 @@ function getZeroPropostaCount(
       const hasZero = Object.entries(current.monthlyData).some(
         ([monthKey, monthData]) => {
           const month = Number(monthKey);
-          return (
-            isMonthVisible(month, startMonth, endMonth) &&
-            monthData.proposta === 0
-          );
+          const isPendente = isPendingForUserType(monthData, userType);
+
+          return isMonthVisible(month, startMonth, endMonth) && isPendente;
         },
       );
 
@@ -83,6 +114,7 @@ function getZeroPropostaMonths(
   row: BudgetRow,
   startMonth: number,
   endMonth: number,
+  userType: "gestor" | "financeiro",
 ): number[] {
   const months = new Set<number>();
 
@@ -90,11 +122,9 @@ function getZeroPropostaMonths(
     if (current.level === "subconta") {
       Object.entries(current.monthlyData).forEach(([monthKey, monthData]) => {
         const month = Number(monthKey);
+        const isPendente = isPendingForUserType(monthData, userType);
 
-        if (
-          isMonthVisible(month, startMonth, endMonth) &&
-          monthData.proposta === 0
-        ) {
+        if (isMonthVisible(month, startMonth, endMonth) && isPendente) {
           months.add(month);
         }
       });
@@ -108,22 +138,33 @@ function getZeroPropostaMonths(
   return Array.from(months).sort((a, b) => a - b);
 }
 
-function formatZeroPropostaTooltip(months: number[]) {
+function formatPendingTooltip(
+  months: number[],
+  userType: "gestor" | "financeiro",
+) {
   if (months.length === 12) {
-    return "Proposta zerada em todos os meses";
+    return userType === "gestor"
+      ? "Proposta zerada em todos os meses"
+      : "Orçamento não preenchido em todos os meses";
   }
 
   if (months.length > 4) {
-    return `Proposta zerada em ${months.length} meses`;
+    return userType === "gestor"
+      ? `Proposta zerada em ${months.length} meses`
+      : `Orçamento não preenchido em ${months.length} meses`;
   }
 
   if (months.length === 1) {
-    return `Proposta zerada em ${monthNames[months[0] - 1]}`;
+    return userType === "gestor"
+      ? `Proposta zerada em ${monthNames[months[0] - 1]}`
+      : `Orçamento não preenchido em ${monthNames[months[0] - 1]}`;
   }
 
   const labels = months.map((month) => monthNames[month - 1]);
   const lastLabel = labels.pop();
-  return `Proposta zerada em ${labels.join(", ")} e ${lastLabel}`;
+  return userType === "gestor"
+    ? `Proposta zerada em ${labels.join(", ")} e ${lastLabel}`
+    : `Orçamento não preenchido em ${labels.join(", ")} e ${lastLabel}`;
 }
 
 interface ConfirmationModalProps {
@@ -257,20 +298,24 @@ function collectDescendantIds(row: BudgetRow): string[] {
   ]);
 }
 
-export function BudgetTable({
+export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(function BudgetTable({
   data,
+  visibleData,
   onDataChange,
+  onBaselineChange,
+  onManualProposalEdit,
   startMonth,
   endMonth,
-}: BudgetTableProps) {
+  userType,
+}: BudgetTableProps, ref) {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(
-    new Set(data.filter((row) => row.isExpanded).map((row) => row.id)),
+    new Set(visibleData.filter((row) => row.isExpanded).map((row) => row.id)),
   );
 
-  const dfcRowIds = data
+  const dfcRowIds = visibleData
     .filter((row) => row.level === "dfc" && row.children?.length)
     .map((row) => row.id);
-  const contaRowIds = data.flatMap(
+  const contaRowIds = visibleData.flatMap(
     (row) =>
       row.children
         ?.filter((child) => child.level === "conta" && child.children?.length)
@@ -284,9 +329,9 @@ export function BudgetTable({
       row.children?.forEach(visit);
     };
 
-    data.forEach(visit);
+    visibleData.forEach(visit);
     return map;
-  }, [data]);
+  }, [visibleData]);
 
   const toggleRow = (rowId: string) => {
     setExpandedRows((prev) => {
@@ -326,7 +371,7 @@ export function BudgetTable({
   const computedDataById = useMemo(() => {
     const map = new Map<string, Record<number, MonthlyData>>();
 
-    data.forEach((row) => {
+    visibleData.forEach((row) => {
       buildRowComputedData(row, map);
     });
 
@@ -353,7 +398,7 @@ export function BudgetTable({
     map.set("resultado-liquido", resultadoLiquido);
 
     return map;
-  }, [data]);
+  }, [visibleData]);
 
   const zeroPropostaByGroup = useMemo(() => {
     const map = new Map<
@@ -367,17 +412,17 @@ export function BudgetTable({
     const visit = (row: BudgetRow) => {
       if (row.level === "dfc" && row.children?.length) {
         map.set(row.id, {
-          count: getZeroPropostaCount(row, startMonth, endMonth),
-          months: getZeroPropostaMonths(row, startMonth, endMonth),
+          count: getZeroPropostaCount(row, startMonth, endMonth, userType),
+          months: getZeroPropostaMonths(row, startMonth, endMonth, userType),
         });
       }
 
       row.children?.forEach(visit);
     };
 
-    data.forEach(visit);
+    visibleData.forEach(visit);
     return map;
-  }, [data, startMonth, endMonth]);
+  }, [visibleData, startMonth, endMonth, userType]);
 
   const getZeroPropostaCountForGroup = (groupId: string) =>
     zeroPropostaByGroup.get(groupId)?.count ?? 0;
@@ -385,10 +430,10 @@ export function BudgetTable({
   const getZeroPropostaMonthsForGroup = (groupId: string) =>
     zeroPropostaByGroup.get(groupId)?.months ?? [];
 
-  const showContaColumn = data.some(
+  const showContaColumn = visibleData.some(
     (row) => row.children?.length && expandedRows.has(row.id),
   );
-  const showSubcontaColumn = data.some(
+  const showSubcontaColumn = visibleData.some(
     (row) =>
       expandedRows.has(row.id) &&
       row.children?.some(
@@ -424,6 +469,10 @@ export function BudgetTable({
   ) => {
     const numValue = parseFloat(value.replace(/\D/g, "")) || 0;
 
+    if (field === "proposta") {
+      onManualProposalEdit(rowId, month);
+    }
+
     const updateRow = (row: BudgetRow): BudgetRow => {
       if (row.id === rowId) {
         return {
@@ -433,6 +482,7 @@ export function BudgetTable({
             [month]: {
               ...row.monthlyData[month],
               [field]: numValue,
+              ...(field === "proposta" ? { changeType: "manual" } : {}),
             },
           },
         };
@@ -522,6 +572,7 @@ export function BudgetTable({
           updateMonthlyDataRows(data, (monthData) => ({
             ...monthData,
             [targetField]: monthData[sourceField],
+            ...(targetField === "proposta" ? { changeType: "copy" } : {}),
           })),
         ),
       successMessage,
@@ -564,6 +615,7 @@ export function BudgetTable({
                 ...monthData,
                 proposta: 0,
                 orcamento: 0,
+                changeType: "reset",
               })),
             ),
           "Operação realizada com sucesso!",
@@ -584,12 +636,22 @@ export function BudgetTable({
                   ...monthData,
                   proposta: fillValue,
                   orcamento: fillValue,
+                  changeType: "copy",
                 };
               }),
             ),
           "Operação realizada com sucesso!",
         ),
     );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openFillPropostaOrcamento: handleFillPropostaOrcamento,
+      openResetPropostaOrcamento: handleResetPropostaOrcamento,
+    }),
+    [],
+  );
 
   const visibleMonths = Array.from(
     { length: endMonth - startMonth + 1 },
@@ -620,6 +682,8 @@ export function BudgetTable({
 
   const renderRow = (row: BudgetRow): ReactElement[] => {
     const rowMonthlyData = computedDataById.get(row.id) ?? row.monthlyData;
+    const isGestor = userType === "gestor";
+    const isFinanceiro = userType === "financeiro";
     const isExpanded = expandedRows.has(row.id);
     const hasChildren = Boolean(row.children?.length);
     const isSummaryRow = highlightedRows.has(row.dfc);
@@ -627,6 +691,8 @@ export function BudgetTable({
     const isRevenueEditable = row.id === "receita";
     const canEditValues =
       (row.editable && isLeafRow && !isSummaryRow) || isRevenueEditable;
+    const canEditProposta = canEditValues && isGestor;
+    const canEditOrcamento = canEditValues && isFinanceiro;
     const hidePercentages = row.dfc === "Receita";
     const showInlineTotal = isExpanded && hasChildren && !isSummaryRow;
     const outerDividerClassName = showInlineTotal
@@ -665,7 +731,7 @@ export function BudgetTable({
         : [];
     const zeroPropostaTooltip =
       zeroPropostaMonths.length > 0
-        ? formatZeroPropostaTooltip(zeroPropostaMonths)
+        ? formatPendingTooltip(zeroPropostaMonths, userType)
         : undefined;
 
     const rows: ReactElement[] = [
@@ -731,13 +797,18 @@ export function BudgetTable({
 
         {visibleMonths.map((month) => {
           const monthData = rowMonthlyData[month];
+          const displayedProposta = getDisplayedPropostaValue(
+            monthData,
+            userType,
+          );
+          const displayedOrcamento = isGestor ? 0 : monthData.orcamento;
           const percentAnterior = calculatePercent(
-            monthData.proposta,
+            displayedProposta,
             monthData.anterior,
           );
           const percentProposta = calculatePercent(
-            monthData.orcamento,
-            monthData.proposta,
+            displayedOrcamento,
+            displayedProposta,
           );
 
           return (
@@ -766,25 +837,32 @@ export function BudgetTable({
                     <div className="relative">
                       <input
                         type="text"
-                        value={formatNumber(monthData.proposta)}
-                        onChange={(event) =>
+                        value={formatNumber(displayedProposta)}
+                        disabled={isFinanceiro}
+                        onChange={(event) => {
+                          if (isFinanceiro) return;
+
                           handleValueChange(
                             row.id,
                             month,
                             "proposta",
                             event.target.value,
-                          )
-                        }
+                          );
+                        }}
                         className={`w-full text-right border-none outline-none rounded px-1 pr-4 ${
                           isRevenueEditable
                             ? "bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900"
                             : "bg-transparent text-inherit focus:bg-blue-50"
-                        }`}
+                        } ${isFinanceiro ? "cursor-not-allowed opacity-80" : ""}`}
                       />
-                      <Pencil className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
+                      {isFinanceiro ? (
+                        <Lock className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
+                      ) : (
+                        <Pencil className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
+                      )}
                     </div>
                   ) : (
-                    <span>{formatNumber(monthData.proposta)}</span>
+                    <span>{formatNumber(displayedProposta)}</span>
                   )}
                 </div>
 
@@ -799,25 +877,32 @@ export function BudgetTable({
                     <div className="relative">
                       <input
                         type="text"
-                        value={formatNumber(monthData.orcamento)}
-                        onChange={(event) =>
+                        value={formatNumber(displayedOrcamento)}
+                        disabled={isGestor}
+                        onChange={(event) => {
+                          if (isGestor) return;
+
                           handleValueChange(
                             row.id,
                             month,
                             "orcamento",
                             event.target.value,
-                          )
-                        }
+                          );
+                        }}
                         className={`w-full text-right border-none outline-none rounded px-1 pr-4 ${
                           isRevenueEditable
                             ? "bg-transparent text-white placeholder:text-white/70 focus:bg-white focus:text-slate-900"
                             : "bg-transparent text-inherit focus:bg-blue-50"
-                        }`}
+                        } ${isGestor ? "cursor-not-allowed opacity-80" : ""}`}
                       />
-                      <Pencil className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
+                      {isGestor ? (
+                        <Lock className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
+                      ) : (
+                        <Pencil className="pointer-events-none absolute right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400/80" />
+                      )}
                     </div>
                   ) : (
-                    <span>{formatNumber(monthData.orcamento)}</span>
+                    <span>{formatNumber(displayedOrcamento)}</span>
                   )}
                 </div>
               </div>
@@ -900,30 +985,22 @@ export function BudgetTable({
         >
           Abrir Subcontas
         </button>
-        <button
+        {userType === "gestor" ? (
+          <button
           className={controlButtonClassName}
           onClick={copyAnteriorToProposta}
         >
           Copiar Anterior → Proposta
-        </button>
-        <button
-          className={controlButtonClassName}
-          onClick={copyPropostaToOrcamento}
-        >
-          Copiar Proposta → Orçamento
-        </button>
-        <button
-          className={`${controlButtonClassName} bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100`}
-          onClick={handleResetPropostaOrcamento}
-        >
-          Zerar Proposta e Orçamento
-        </button>
-        <button
-          className={`${controlButtonClassName} bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100`}
-          onClick={handleFillPropostaOrcamento}
-        >
-          Preencher Proposta e Orçamento
-        </button>
+          </button>
+        ) : null}
+        {userType !== "gestor" ? (
+          <button
+            className={controlButtonClassName}
+            onClick={copyPropostaToOrcamento}
+          >
+            Copiar Proposta → Orçamento
+          </button>
+        ) : null}
       </div>
       <ConfirmationModal
         open={Boolean(confirmationState)}
@@ -1069,7 +1146,7 @@ export function BudgetTable({
                       %
                     </div>
                     <div className="flex-1 px-2 py-2 min-w-[100px]">
-                      Orcamento
+                      Orcamento R$
                     </div>
                   </div>
                 </th>
@@ -1122,9 +1199,9 @@ export function BudgetTable({
             </tr>
           </thead>
 
-          <tbody>{data.map((row) => renderRow(row))}</tbody>
+          <tbody>{visibleData.map((row) => renderRow(row))}</tbody>
         </table>
       </div>
     </div>
   );
-}
+});
