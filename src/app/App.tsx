@@ -6,7 +6,6 @@ import toast from 'react-hot-toast';
 import { BudgetHeader } from './budget/components/BudgetHeader';
 import { BudgetFilters } from './budget/components/BudgetFilters';
 import { BudgetTable, BudgetTableActions } from './budget/components/BudgetTable';
-import { UserSwitcher } from './user/components/UserSwitcher';
 import { getBudget } from './budget/services/getBudget';
 import { saveBudgetEntry, collectSaveEntries, SaveBudgetResult } from './budget/services/saveBudget';
 import { budgetAdapter } from '@/app/budget/adapters/budgetAdapter';
@@ -400,7 +399,7 @@ export default function App() {
           startMonth: nextStartMonth,
           endMonth: nextEndMonth,
         },
-        { tipoclassificacao: nextClassificacao === 'S' ? 'S' : undefined },
+        { tipoorcamento: nextClassificacao === 'S' ? 'S' : undefined },
       );
     }
   }, []);
@@ -425,7 +424,7 @@ export default function App() {
 
   const handleSearch = async (
     currentFilters: BudgetFiltersState,
-    options?: { tipoclassificacao?: 'A' | 'S' },
+    options?: { tipoorcamento?: 'S' },
   ) => {
     try {
       setIsLoading(true);
@@ -440,8 +439,8 @@ export default function App() {
         anoorcamento: 2026,
         idgrupo: currentFilters.businessGroupId,
         idunidade,
-        ...(options?.tipoclassificacao && {
-          tipoclassificacao: options.tipoclassificacao,
+        ...(options?.tipoorcamento && {
+          tipoorcamento: options.tipoorcamento,
         }),
       });
 
@@ -839,14 +838,14 @@ export default function App() {
           filters={filters}
           availableUnits={availableUnits}
           allGroups={allGroups}
-          isReadOnly={isGestor || filtersLockedByUrl}
+          isReadOnly={isGestor}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           onFilterChange={handleFilterChange}
           onClear={handleClear}
           onSave={handleOpenSaveModal}
           onSearch={() => void handleSearch(filters, {
-            tipoclassificacao: classificacao === 'S' ? 'S' : undefined,
+            tipoorcamento: classificacao === 'S' ? 'S' : undefined,
           })}
         />
 
@@ -968,6 +967,7 @@ export default function App() {
                       startMonth={filters.startMonth}
                       endMonth={filters.endMonth}
                       userType={userType}
+                      classificacao={classificacao}
                       filters={filters}
                     />
                   </div>
@@ -996,6 +996,7 @@ export default function App() {
                   startMonth={filters.startMonth}
                   endMonth={filters.endMonth}
                   userType={userType}
+                  classificacao={classificacao}
                   filters={filters}
                 />
               </div>
@@ -1003,17 +1004,6 @@ export default function App() {
           )}
         </div>
       </div>
-
-      <UserSwitcher
-        userType={userType}
-        onChange={setUserType}
-        onFillPropostaOrcamento={() =>
-          budgetTableActionsRef.current?.openFillPropostaOrcamento()
-        }
-        onResetPropostaOrcamento={() =>
-          budgetTableActionsRef.current?.openResetPropostaOrcamento()
-        }
-      />
     </div>
   );
 }

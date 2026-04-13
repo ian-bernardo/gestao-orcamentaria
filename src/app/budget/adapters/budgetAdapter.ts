@@ -45,6 +45,9 @@ const DFC_ID_BY_NAME: Record<string, string> = {
   Investimento: 'investimento',
 };
 
+// Indicadores que pertencem ao DFC Despesa
+const RATEIO_INDICATORS = new Set(['Rateio', 'Rateio Desp.']);
+
 function createEmptyMonthlyData(): Record<number, MonthlyData> {
   const monthlyData = {} as Record<number, MonthlyData>;
 
@@ -303,7 +306,12 @@ export function budgetAdapter(apiData: BudgetApiItem[]): BudgetRow[] {
       return;
     }
 
-    const dfcName = item.NOMEINDICADOR || 'Sem Classificacao';
+    const isRateio = item.NOMEINDICADOR
+      ? RATEIO_INDICATORS.has(item.NOMEINDICADOR)
+      : false;
+    const dfcName = isRateio
+      ? 'Despesa'
+      : (item.NOMEINDICADOR || 'Sem Classificacao');
     const dfcNode = getDfcNode(dfcMap, dfcName);
     const contaNode = getContaNode(dfcNode, item.CONTA || 'Sem Conta');
 
@@ -398,9 +406,5 @@ export function budgetAdapter(apiData: BudgetApiItem[]): BudgetRow[] {
     resultadoOperacional,
     dfcMap.get('Investimento') ?? getDfcNode(dfcMap, 'Investimento'),
     resultadoLiquido,
-    ...Array.from(dfcMap.values()).filter(
-      (row) =>
-        !['Custo', 'Imposto', 'Despesa', 'Investimento'].includes(row.dfc),
-    ),
   ];
 }

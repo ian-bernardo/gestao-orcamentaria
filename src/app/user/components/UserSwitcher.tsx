@@ -9,8 +9,6 @@ type UserType = 'gestor' | 'financeiro';
 interface UserSwitcherProps {
   userType: UserType;
   onChange: (userType: UserType) => void;
-  onFillPropostaOrcamento?: () => void;
-  onResetPropostaOrcamento?: () => void;
 }
 
 const options: Array<{ value: UserType; label: string }> = [
@@ -21,8 +19,6 @@ const options: Array<{ value: UserType; label: string }> = [
 export function UserSwitcher({
   userType,
   onChange,
-  onFillPropostaOrcamento,
-  onResetPropostaOrcamento,
 }: UserSwitcherProps) {
   const [open, setOpen] = useState(false);
   return (
@@ -75,45 +71,6 @@ export function UserSwitcher({
             })}
           </div>
 
-          {userType === 'financeiro' ? (
-            <>
-              <div className="mx-2 my-2 h-px bg-slate-200" />
-
-              <div className="px-2 pb-2 pt-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Ações
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onResetPropostaOrcamento?.();
-                    setOpen(false);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-amber-800 transition-colors hover:bg-amber-50"
-                >
-                  <span className="font-medium">
-                    Zerar Proposta e Orçamento
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onFillPropostaOrcamento?.();
-                    setOpen(false);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-emerald-800 transition-colors hover:bg-emerald-50"
-                >
-                  <span className="font-medium">
-                    Preencher Proposta e Orçamento
-                  </span>
-                </button>
-              </div>
-            </>
-          ) : null}
         </PopoverContent>
       </Popover>
     </div>

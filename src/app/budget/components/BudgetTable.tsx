@@ -14,6 +14,7 @@ interface BudgetTableProps {
   startMonth: number;
   endMonth: number;
   userType: 'gestor' | 'financeiro';
+  classificacao?: 'A' | 'S';
   filters: {
     businessGroup: string;
     businessUnits: string[];
@@ -346,7 +347,9 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
   startMonth,
   endMonth,
   userType,
+  classificacao = 'A',
 }: BudgetTableProps, ref) {
+  const isSintetico = classificacao === 'S';
   const [expandedRows, setExpandedRows] = useState<Set<string>>(
     new Set(visibleData.filter((row) => row.isExpanded).map((row) => row.id)),
   );
@@ -373,6 +376,7 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
   }, [visibleData]);
 
   const toggleRow = (rowId: string) => {
+    if (isSintetico) return;
     setExpandedRows((prev) => {
       const next = new Set(prev);
       const row = rowById.get(rowId);
@@ -776,18 +780,21 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
   const controlButtonClassName =
     "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900";
 
-  const renderToggle = (rowId: string, isExpanded: boolean) => (
-    <button
-      onClick={() => toggleRow(rowId)}
-      className="hover:bg-gray-200 rounded p-0.5 transition-colors"
-    >
-      {isExpanded ? (
-        <ChevronDown className="h-4 w-4" />
-      ) : (
-        <ChevronRight className="h-4 w-4" />
-      )}
-    </button>
-  );
+  const renderToggle = (rowId: string, isExpanded: boolean) => {
+    if (isSintetico) return null;
+    return (
+      <button
+        onClick={() => toggleRow(rowId)}
+        className="hover:bg-gray-200 rounded p-0.5 transition-colors"
+      >
+        {isExpanded ? (
+          <ChevronDown className="h-4 w-4" />
+        ) : (
+          <ChevronRight className="h-4 w-4" />
+        )}
+      </button>
+    );
+  };
 
   const renderTotalLabel = () => (
     <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-800">
@@ -1096,24 +1103,28 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
         <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
           Exibicao
         </span>
-        <button
-          className={controlButtonClassName}
-          onClick={() => setExpansionMode("dfc")}
-        >
-          Somente DFC
-        </button>
-        <button
-          className={controlButtonClassName}
-          onClick={() => setExpansionMode("contas")}
-        >
-          Abrir Contas
-        </button>
-        <button
-          className={controlButtonClassName}
-          onClick={() => setExpansionMode("subcontas")}
-        >
-          Abrir Subcontas
-        </button>
+        {!isSintetico && (
+          <>
+            <button
+              className={controlButtonClassName}
+              onClick={() => setExpansionMode("dfc")}
+            >
+              Somente DFC
+            </button>
+            <button
+              className={controlButtonClassName}
+              onClick={() => setExpansionMode("contas")}
+            >
+              Abrir Contas
+            </button>
+            <button
+              className={controlButtonClassName}
+              onClick={() => setExpansionMode("subcontas")}
+            >
+              Abrir Subcontas
+            </button>
+          </>
+        )}
         {userType === "gestor" ? (
           <button
             className={controlButtonClassName}
