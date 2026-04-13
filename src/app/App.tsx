@@ -140,6 +140,7 @@ export default function App() {
   const [userType, setUserType] = useState<'gestor' | 'financeiro'>(
     'financeiro',
   );
+  const [classificacao, setClassificacao] = useState<'A' | 'S'>('A');
   const [viewMode, setViewMode] = useState<'consolidado' | 'por_unidade'>(
     'consolidado',
   );
@@ -351,11 +352,15 @@ export default function App() {
     const mesInicial = params.get('p_mes_inicial');
     const mesFinal = params.get('p_mes_final');
     const permissao = params.get('p_permissao');
+    const tipo = params.get('v_tipo');
 
     const nextGroupId = idgrupo ? Number(idgrupo) : undefined;
     const nextUnitIds = idunidade ? [Number(idunidade)] : [];
     const nextStartMonth = mesInicial ? Number(mesInicial) : 1;
     const nextEndMonth = mesFinal ? Number(mesFinal) : 12;
+    const nextClassificacao: 'A' | 'S' = tipo === 'S' ? 'S' : 'A';
+
+    setClassificacao(nextClassificacao);
 
     setFilters((prev) => {
       const unchanged =
@@ -383,6 +388,21 @@ export default function App() {
 
     setUserType(permissao === 'S' ? 'financeiro' : 'gestor');
     setFiltersLockedByUrl(Boolean(idgrupo || idunidade || mesInicial || mesFinal));
+
+    // Busca automática somente quando p_gn vier pela URL
+    if (idgrupo) {
+      void handleSearch(
+        {
+          businessGroupId: nextGroupId,
+          businessUnitIds: nextUnitIds,
+          businessGroup: '',
+          businessUnits: [],
+          startMonth: nextStartMonth,
+          endMonth: nextEndMonth,
+        },
+        { tipoclassificacao: nextClassificacao === 'S' ? 'S' : undefined },
+      );
+    }
   }, []);
 
   // Carregar catálogo de grupos e unidades na inicialização
@@ -405,6 +425,7 @@ export default function App() {
 
   const handleSearch = async (
     currentFilters: BudgetFiltersState,
+    options?: { tipoclassificacao?: 'A' | 'S' },
   ) => {
     try {
       setIsLoading(true);
@@ -419,6 +440,9 @@ export default function App() {
         anoorcamento: 2026,
         idgrupo: currentFilters.businessGroupId,
         idunidade,
+        ...(options?.tipoclassificacao && {
+          tipoclassificacao: options.tipoclassificacao,
+        }),
       });
 
       const adapted = budgetAdapter(apiData);
@@ -821,7 +845,9 @@ export default function App() {
           onFilterChange={handleFilterChange}
           onClear={handleClear}
           onSave={handleOpenSaveModal}
-          onSearch={() => void handleSearch(filters)}
+          onSearch={() => void handleSearch(filters, {
+            tipoclassificacao: classificacao === 'S' ? 'S' : undefined,
+          })}
         />
 
         <Dialog open={isSaveModalOpen} onOpenChange={setIsSaveModalOpen}>

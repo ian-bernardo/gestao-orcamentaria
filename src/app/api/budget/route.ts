@@ -24,8 +24,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const response = await fetch(url, {
-      cache: 'no-store',
-    });
+  cache: 'no-store',
+  headers: {
+    'Referer': 'https://homologacao.sistema.romancemoda.com.br/',
+    'Origin': 'https://homologacao.sistema.romancemoda.com.br',
+  },
+});
 
     if (!response.ok) {
       const errorText = await response.text();
