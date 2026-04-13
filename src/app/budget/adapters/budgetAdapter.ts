@@ -267,12 +267,17 @@ function sumChildrenIntoMonthlyData(row: BudgetRow): Record<number, MonthlyData>
   return total;
 }
 
-export function budgetAdapter(apiData: BudgetApiItem[]): BudgetRow[] {
+export function budgetAdapter(
+  apiData: BudgetApiItem[],
+  tipoorcamento?: string,
+): BudgetRow[] {
   const rows = Array.isArray(apiData) ? apiData : [];
   const dfcMap = new Map<string, BudgetRow>();
 
   const unitsRegistry = new Map<number, UnitMeta>();
   const unitsWithRealData = new Set<number>();
+
+  const isSintetico = tipoorcamento === 'S';
 
   const receitaRow: BudgetRow = {
     id: 'receita',
@@ -296,12 +301,40 @@ export function budgetAdapter(apiData: BudgetApiItem[]): BudgetRow[] {
     }
 
     const mes = item.MES ? mesesMap[item.MES] : undefined;
+    if (!mes) return;
 
-    if (item.NOMEINDICADOR === 'Receita') {
-      if (!mes) {
+    if (isSintetico) {
+      const dfcName = item.NOMEINDICADOR || 'Sem Classificacao';
+      if (dfcName === 'Sem Classificacao') return;
+
+      if (dfcName === 'Receita') {
+        receitaRow.monthlyData[mes] = accumulateValue(receitaRow.monthlyData[mes], item);
+        if (!receitaRow.idGestao && item.IDGESTAOORCAMENTARIAUN != null) {
+          receitaRow.idGestao = item.IDGESTAOORCAMENTARIAUN;
+          receitaRow.businessGroupId = item.IDGRUPONEGOCIO;
+          receitaRow.businessUnitId = item.IDUNIDADEDENEGOCIO;
+          receitaRow.businessGroup = item.GRUPONEGOCIO;
+          receitaRow.businessUnit = item.UNIDADENEGOCIO;
+        }
         return;
       }
 
+      const dfcNode = getDfcNode(dfcMap, dfcName);
+
+      if (!dfcNode.idGestao && item.IDGESTAOORCAMENTARIAUN != null) {
+        dfcNode.idGestao = item.IDGESTAOORCAMENTARIAUN;
+        dfcNode.businessGroupId = item.IDGRUPONEGOCIO;
+        dfcNode.businessUnitId = item.IDUNIDADEDENEGOCIO;
+        dfcNode.businessGroup = item.GRUPONEGOCIO;
+        dfcNode.businessUnit = item.UNIDADENEGOCIO;
+        dfcNode.editable = true;
+      }
+
+      dfcNode.monthlyData[mes] = accumulateValue(dfcNode.monthlyData[mes], item);
+      return;
+    }
+
+    if (item.NOMEINDICADOR === 'Receita') {
       receitaRow.monthlyData[mes] = accumulateValue(receitaRow.monthlyData[mes], item);
       return;
     }
@@ -339,7 +372,9 @@ export function budgetAdapter(apiData: BudgetApiItem[]): BudgetRow[] {
   addUnitPlaceholderRows(dfcMap, unitsRegistry, unitsWithRealData);
 
   dfcMap.forEach((dfcNode) => {
-    sumChildrenIntoMonthlyData(dfcNode);
+    if (dfcNode.children?.length) {
+      sumChildrenIntoMonthlyData(dfcNode);
+    }
   });
 
   receitaRow.monthlyData = normalizeMonthlyData(receitaRow.monthlyData);

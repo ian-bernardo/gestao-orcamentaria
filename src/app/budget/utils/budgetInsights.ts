@@ -69,7 +69,10 @@ function rowMatchesFilters(row: BudgetRow, filters: BudgetFiltersState) {
   return matchesGroup && matchesUnit;
 }
 
-function isActionableRow(row: BudgetRow) {
+function isActionableRow(row: BudgetRow, classificacao?: 'A' | 'S') {
+  if (classificacao === 'S') {
+    return row.editable && row.level === 'dfc';
+  }
   return row.editable && (row.level === 'conta' || row.level === 'subconta');
 }
 
@@ -92,6 +95,7 @@ export function getChanges(
   originalRows: BudgetRow[],
   currentRows: BudgetRow[],
   userType: 'gestor' | 'financeiro',
+  classificacao?: 'A' | 'S',
 ): ChangeItem[] {
   const originalById = new Map<string, BudgetRow>();
 
@@ -146,7 +150,7 @@ export function getChanges(
         })
         .filter((item): item is ChangeMonthItem => item !== null);
 
-      if (isActionableRow(row) && months.length > 0) {
+      if (isActionableRow(row, classificacao) && months.length > 0) {
         changes.push({
           rowId: row.id,
           dfc: row.dfc,
@@ -172,6 +176,7 @@ export function getPendencias(
   rows: BudgetRow[],
   filters: BudgetFiltersState,
   userType: 'gestor' | 'financeiro',
+  classificacao?: 'A' | 'S',
 ): PendingItem[] {
   const pendencias: PendingItem[] = [];
 
@@ -196,7 +201,7 @@ export function getPendencias(
         (month): month is (typeof monthNames)[number] => month !== null,
       );
 
-    if (isActionableRow(row) && months.length > 0) {
+    if (isActionableRow(row, classificacao) && months.length > 0) {
       pendencias.push({
         rowId: row.id,
         dfc: row.dfc,

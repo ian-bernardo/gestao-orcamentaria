@@ -444,7 +444,7 @@ export default function App() {
         }),
       });
 
-      const adapted = budgetAdapter(apiData);
+      const adapted = budgetAdapter(apiData, options?.tipoorcamento);
       const data = deepClone(adapted);
 
       setBudgetData(data);
@@ -543,8 +543,8 @@ export default function App() {
     userType === 'financeiro' && viewMode === 'por_unidade';
 
   const allChanges = useMemo(
-    () => getChanges(originalDataSnapshot, budgetData, userType),
-    [originalDataSnapshot, budgetData, userType],
+    () => getChanges(originalDataSnapshot, budgetData, userType, classificacao),
+    [originalDataSnapshot, budgetData, userType, classificacao],
   );
 
   const changes = useMemo(
@@ -553,8 +553,8 @@ export default function App() {
   );
 
   const pendencias = useMemo(
-    () => getPendencias(filteredData, filters, userType),
-    [filteredData, filters, userType],
+    () => getPendencias(filteredData, filters, userType, classificacao),
+    [filteredData, filters, userType, classificacao],
   );
 
   const changeCount = useMemo(

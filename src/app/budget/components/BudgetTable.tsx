@@ -811,8 +811,11 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
     const isSummaryRow = highlightedRows.has(row.dfc);
     const isLeafRow = !hasChildren;
     const isRevenueEditable = row.id === "receita";
+    const isSinteticoDfcEditable = isSintetico && row.level === "dfc" && !isSummaryRow;
     const canEditValues =
-      (row.editable && isLeafRow && !isSummaryRow) || isRevenueEditable;
+      (row.editable && isLeafRow && !isSummaryRow) ||
+      isRevenueEditable ||
+      isSinteticoDfcEditable;
     const canEditProposta = canEditValues && isGestor;
     const canEditOrcamento = canEditValues && isFinanceiro;
     const hidePercentages = row.dfc === "Receita";
