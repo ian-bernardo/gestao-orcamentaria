@@ -17,17 +17,19 @@ import {
 
 interface BudgetFiltersProps {
   filters: {
+    businessGroupId?: number;
+    businessUnitIds: number[];
     businessGroup: string;
     businessUnits: string[];
     startMonth: number;
     endMonth: number;
   };
-  availableUnits: readonly string[];
-  allGroups: readonly string[];
+  availableUnits: { label: string; value: number }[];
+  allGroups: { label: string; value: number }[];
   isReadOnly?: boolean;
   viewMode: 'consolidado' | 'por_unidade';
   onViewModeChange: (mode: 'consolidado' | 'por_unidade') => void;
-  onFilterChange: (key: string, value: string | number | string[]) => void;
+  onFilterChange: (key: string, value: string | number | string[] | number[] | undefined) => void;
   onClear: () => void;
   onSave: () => void;
   onSearch: () => void;
@@ -48,16 +50,23 @@ const months = [
   { value: 12, label: 'Dezembro' },
 ];
 
-function getUnitsLabel(selectedUnits: string[]) {
-  if (!selectedUnits || selectedUnits.length === 0) {
+function getUnitsLabel(
+  selectedUnitIds: number[],
+  availableUnits: { label: string; value: number }[]
+) {
+  if (!selectedUnitIds || selectedUnitIds.length === 0) {
     return 'Todas as unidades';
   }
 
-  if (selectedUnits.length === 1) {
-    return selectedUnits[0];
+  const selected = availableUnits.filter((u) =>
+    selectedUnitIds.includes(u.value)
+  );
+
+  if (selected.length === 1) {
+    return selected[0].label;
   }
 
-  return `${selectedUnits.length} unidades selecionadas`;
+  return `${selected.length} unidades selecionadas`;
 }
 
 export function BudgetFilters({
@@ -72,15 +81,20 @@ export function BudgetFilters({
   onSave,
   onSearch,
 }: BudgetFiltersProps) {
-  const selectedUnitsLabel = getUnitsLabel(filters.businessUnits);
+  const selectedUnitsLabel = getUnitsLabel(
+  filters.businessUnitIds,
+  availableUnits
+);
 
-  const toggleUnit = (unit: string) => {
-    const nextUnits = filters.businessUnits.includes(unit)
-      ? filters.businessUnits.filter((currentUnit) => currentUnit !== unit)
-      : [...filters.businessUnits, unit];
+  const toggleUnit = (unit: { label: string; value: number }) => {
+  const isSelected = filters.businessUnitIds.includes(unit.value);
 
-    onFilterChange('businessUnits', nextUnits);
-  };
+  const nextUnitIds = isSelected
+    ? filters.businessUnitIds.filter((id) => id !== unit.value)
+    : [...filters.businessUnitIds, unit.value];
+
+  onFilterChange('businessUnitIds', nextUnitIds);
+};
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -90,9 +104,12 @@ export function BudgetFilters({
             Grupo de Negócio
           </Label>
           <Select
-            value={filters.businessGroup || '__all__'}
+            value={filters.businessGroupId?.toString() || ''}
             onValueChange={(value) =>
-              onFilterChange('businessGroup', value === '__all__' ? '' : value)
+              onFilterChange(
+                'businessGroupId',
+                value === '__all__' ? undefined : Number(value),
+              )
             }
             disabled={isReadOnly}
           >
@@ -102,8 +119,8 @@ export function BudgetFilters({
             <SelectContent>
               <SelectItem value="__all__">Todos os grupos</SelectItem>
               {allGroups.map((group) => (
-                <SelectItem key={group} value={group}>
-                  {group}
+                <SelectItem key={group.value} value={group.value.toString()}>
+                  {group.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -145,15 +162,15 @@ export function BudgetFilters({
                 ) : (
                   availableUnits.map((unit) => (
                     <label
-                      key={unit}
+                      key={unit.value}
                       className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
                     >
                       <Checkbox
-                        checked={filters.businessUnits.includes(unit)}
+                        checked={filters.businessUnitIds.includes(unit.value)}
                         onCheckedChange={() => toggleUnit(unit)}
                         disabled={isReadOnly}
                       />
-                      <span className="truncate">{unit}</span>
+                      <span className="truncate">{unit.label}</span>
                     </label>
                   ))
                 )}
@@ -207,7 +224,7 @@ export function BudgetFilters({
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex items-center gap-3">
         {!isReadOnly ? (
           <Button
             onClick={() =>
@@ -216,36 +233,43 @@ export function BudgetFilters({
               )
             }
             variant="outline"
-            className="px-8 border-gray-300 hover:bg-gray-50"
+            className="px-6 border-gray-300 hover:bg-gray-50 text-slate-600"
           >
             {viewMode === 'consolidado'
               ? 'Visualizar por unidade'
               : 'Visualizar consolidado'}
           </Button>
         ) : null}
+
+        <div className="flex-1" />
+
         <Button
           onClick={onSave}
-          variant="outline"
-          className="px-8 border-gray-300 hover:bg-gray-50"
+          className="px-6 bg-[#0066A1] hover:bg-[#005080] text-white"
         >
           Salvar
         </Button>
+
         {!isReadOnly ? (
-          <Button
-            onClick={onClear}
-            variant="outline"
-            className="px-8 border-gray-300 hover:bg-gray-50"
-          >
-            Limpar
-          </Button>
-        ) : null}
-        {!isReadOnly ? (
-          <Button
-            onClick={onSearch}
-            className="px-8 bg-[#0066A1] hover:bg-[#005080] text-white"
-          >
-            Buscar
-          </Button>
+          <>
+            <div className="h-6 w-px bg-gray-200" />
+
+            <Button
+              onClick={onClear}
+              variant="outline"
+              className="px-6 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+            >
+              Limpar filtros
+            </Button>
+
+            <Button
+              onClick={onSearch}
+              variant="outline"
+              className="px-8 border-[#0066A1] text-[#0066A1] hover:bg-blue-50"
+            >
+              Filtrar
+            </Button>
+          </>
         ) : null}
       </div>
     </div>

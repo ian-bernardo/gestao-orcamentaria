@@ -23,6 +23,7 @@ interface BudgetTableProps {
 export interface BudgetTableActions {
   openFillPropostaOrcamento: () => void;
   openResetPropostaOrcamento: () => void;
+  clearCopySnapshot: () => void;
 }
 
 const DFC_COLUMN_WIDTH = 180;
@@ -48,7 +49,7 @@ const highlightedRows = new Set([
   "Receita",
   "Margem Bruta",
   "Resultado Operacional",
-  "Resultado Liquido",
+  "Resultado Líquido",
 ]);
 
 function isMonthVisible(month: number, startMonth: number, endMonth: number) {
@@ -231,6 +232,38 @@ function createEmptyMonthlyData(): Record<number, MonthlyData> {
   return monthlyData;
 }
 
+function getSafeMonthData(
+  monthlyData: Record<number, MonthlyData>,
+  month: number,
+): MonthlyData {
+  return (
+    monthlyData[month] ?? {
+      anterior: 0,
+      proposta: 0,
+      orcamento: 0,
+      changeType: null,
+    }
+  );
+}
+
+function normalizeMonthlyData(
+  monthlyData: Record<number, MonthlyData>,
+): Record<number, MonthlyData> {
+  const normalized = createEmptyMonthlyData();
+
+  for (let month = 1; month <= 12; month++) {
+    const current = getSafeMonthData(monthlyData, month);
+    normalized[month] = {
+      anterior: current.anterior ?? 0,
+      proposta: current.proposta ?? 0,
+      orcamento: current.orcamento ?? 0,
+      changeType: current.changeType ?? null,
+    };
+  }
+
+  return normalized;
+}
+
 function combineMonthlyData(
   first: Record<number, MonthlyData>,
   second: Record<number, MonthlyData>,
@@ -239,10 +272,13 @@ function combineMonthlyData(
   const result = createEmptyMonthlyData();
 
   for (let month = 1; month <= 12; month++) {
+    const firstMonth = getSafeMonthData(first, month);
+    const secondMonth = getSafeMonthData(second, month);
+
     result[month] = {
-      anterior: first[month].anterior + second[month].anterior * operator,
-      proposta: first[month].proposta + second[month].proposta * operator,
-      orcamento: first[month].orcamento + second[month].orcamento * operator,
+      anterior: firstMonth.anterior + secondMonth.anterior * operator,
+      proposta: firstMonth.proposta + secondMonth.proposta * operator,
+      orcamento: firstMonth.orcamento + secondMonth.orcamento * operator,
     };
   }
 
@@ -257,13 +293,15 @@ function sumChildrenMonthlyData(
 
   row.children?.forEach((child) => {
     const childMonthlyData =
-      computedDataById.get(child.id) ?? child.monthlyData;
+      computedDataById.get(child.id) ?? normalizeMonthlyData(child.monthlyData);
 
     for (let month = 1; month <= 12; month++) {
+      const childMonth = getSafeMonthData(childMonthlyData, month);
+
       total[month] = {
-        anterior: total[month].anterior + childMonthlyData[month].anterior,
-        proposta: total[month].proposta + childMonthlyData[month].proposta,
-        orcamento: total[month].orcamento + childMonthlyData[month].orcamento,
+        anterior: total[month].anterior + childMonth.anterior,
+        proposta: total[month].proposta + childMonth.proposta,
+        orcamento: total[month].orcamento + childMonth.orcamento,
       };
     }
   });
@@ -276,8 +314,9 @@ function buildRowComputedData(
   computedDataById: Map<string, Record<number, MonthlyData>>,
 ): Record<number, MonthlyData> {
   if (!row.children?.length) {
-    computedDataById.set(row.id, row.monthlyData);
-    return row.monthlyData;
+    const normalized = normalizeMonthlyData(row.monthlyData);
+    computedDataById.set(row.id, normalized);
+    return normalized;
   }
 
   row.children.forEach((child) => {
@@ -376,21 +415,29 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
     });
 
     const receita = map.get("receita") ?? createEmptyMonthlyData();
-    const custo = map.get("custo") ?? createEmptyMonthlyData();
-    const imposto = map.get("imposto") ?? createEmptyMonthlyData();
-    const despesa = map.get("despesa") ?? createEmptyMonthlyData();
-    const investimento = map.get("investimento") ?? createEmptyMonthlyData();
+    const custo = map.get("dfc-Custo") ?? createEmptyMonthlyData();
+    const imposto = map.get("dfc-Imposto") ?? createEmptyMonthlyData();
+    const despesa = map.get("dfc-Despesa") ?? createEmptyMonthlyData();
+    const investimento = map.get("dfc-Investimento") ?? createEmptyMonthlyData();
+
+    const receitaMenosCusto = combineMonthlyData(receita, custo, -1);
 
     const margemBruta = combineMonthlyData(
-      combineMonthlyData(receita, custo, -1),
+      receitaMenosCusto,
       imposto,
-      -1,
+      -1
     );
-    const resultadoOperacional = combineMonthlyData(margemBruta, despesa, -1);
+
+    const resultadoOperacional = combineMonthlyData(
+      margemBruta,
+      despesa,
+      -1
+    );
+
     const resultadoLiquido = combineMonthlyData(
       resultadoOperacional,
       investimento,
-      -1,
+      -1
     );
 
     map.set("margem-bruta", margemBruta);
@@ -526,6 +573,7 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
   } | null>(null);
 
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [preCopySnapshot, setPreCopySnapshot] = useState<BudgetRow[] | null>(null);
 
   const showSuccessToast = (message: string) =>
     toast.success(message, { position: "top-right", duration: 3000 });
@@ -572,36 +620,102 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
           updateMonthlyDataRows(data, (monthData) => ({
             ...monthData,
             [targetField]: monthData[sourceField],
-            ...(targetField === "proposta" ? { changeType: "copy" } : {}),
+            ...(targetField === "proposta" || targetField === "orcamento"
+              ? { changeType: "copy" }
+              : {}),
           })),
         ),
       successMessage,
     );
   };
 
-  const copyAnteriorToProposta = () =>
+  const copyAnteriorToProposta = () => {
+    const snapshot = JSON.parse(JSON.stringify(data)) as BudgetRow[];
     openConfirmationModal(
       "Confirmar ação",
       "Deseja copiar os valores de Anterior para Proposta?",
-      () =>
-        performCopy(
-          "anterior",
-          "proposta",
-          "Dados copiados com sucesso!",
-        ),
+      () => {
+        setPreCopySnapshot(snapshot);
+        performCopy("anterior", "proposta", "Dados copiados com sucesso!");
+      },
     );
+  };
 
-  const copyPropostaToOrcamento = () =>
+  const copyPropostaToOrcamento = () => {
+    const snapshot = JSON.parse(JSON.stringify(data)) as BudgetRow[];
     openConfirmationModal(
       "Confirmar ação",
       "Deseja copiar os valores de Proposta para Orçamento?",
-      () =>
-        performCopy(
-          "proposta",
-          "orcamento",
-          "Dados copiados com sucesso!",
-        ),
+      () => {
+        setPreCopySnapshot(snapshot);
+        performCopy("proposta", "orcamento", "Dados copiados com sucesso!");
+      },
     );
+  };
+
+  const revertCopy = (field: "proposta" | "orcamento") => {
+    if (!preCopySnapshot) return;
+
+    const snapshotMap = new Map<string, BudgetRow>();
+    const buildSnapshotMap = (rows: BudgetRow[]) => {
+      rows.forEach((row) => {
+        snapshotMap.set(row.id, row);
+        if (row.children) buildSnapshotMap(row.children);
+      });
+    };
+    buildSnapshotMap(preCopySnapshot);
+
+    const revertRow = (row: BudgetRow): BudgetRow => {
+      if (row.level === "subconta") {
+        const snapshotRow = snapshotMap.get(row.id);
+        if (!snapshotRow) return row;
+
+        return {
+          ...row,
+          monthlyData: Object.fromEntries(
+            Object.entries(row.monthlyData).map(([monthKey, monthData]) => {
+              if (monthData.changeType === "copy") {
+                const snapshotMonth = snapshotRow.monthlyData[Number(monthKey)];
+                return [
+                  monthKey,
+                  {
+                    ...monthData,
+                    [field]: snapshotMonth?.[field] ?? 0,
+                    changeType: null,
+                  },
+                ];
+              }
+              return [monthKey, monthData];
+            }),
+          ) as BudgetRow["monthlyData"],
+        };
+      }
+
+      return { ...row, children: row.children?.map(revertRow) };
+    };
+
+    performAction(
+      () => {
+        onDataChange(data.map(revertRow));
+        setPreCopySnapshot(null);
+      },
+      "Cópia desfeita com sucesso!",
+    );
+  };
+
+  const handleRevertCopy = () => {
+    const field = userType === "gestor" ? "proposta" : "orcamento";
+    const label =
+      userType === "gestor"
+        ? "Os valores de Proposta copiados de Anterior serão revertidos. "
+        : "Os valores de Orçamento copiados da Proposta serão revertidos. ";
+
+    openConfirmationModal(
+      "Desfazer cópia",
+      label + "Atenção: edições manuais feitas após a cópia serão mantidas.",
+      () => revertCopy(field),
+    );
+  };
 
   const handleResetPropostaOrcamento = () =>
     openConfirmationModal(
@@ -649,6 +763,7 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
     () => ({
       openFillPropostaOrcamento: handleFillPropostaOrcamento,
       openResetPropostaOrcamento: handleResetPropostaOrcamento,
+      clearCopySnapshot: () => setPreCopySnapshot(null),
     }),
     [],
   );
@@ -750,7 +865,21 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
                 {row.dfc}
               </span>
               {zeroPropostaCount > 0 ? (
-                <Tooltip content={zeroPropostaTooltip} side="top" align="center">
+                <Tooltip
+                  content={
+                    <div className="space-y-1">
+                      <span className="block text-[10px] font-semibold uppercase tracking-wide text-[#0066A1]">
+                        Pendência
+                      </span>
+                      <span className="block leading-snug text-slate-700">
+                        {zeroPropostaTooltip}
+                      </span>
+                    </div>
+                  }
+                  variant="light-accent"
+                  side="top"
+                  align="center"
+                >
                   <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-100 px-2 text-xs font-semibold text-rose-600">
                     {zeroPropostaCount}
                   </span>
@@ -987,10 +1116,18 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
         </button>
         {userType === "gestor" ? (
           <button
-          className={controlButtonClassName}
-          onClick={copyAnteriorToProposta}
-        >
-          Copiar Anterior → Proposta
+            className={controlButtonClassName}
+            onClick={copyAnteriorToProposta}
+          >
+            Copiar Anterior → Proposta
+          </button>
+        ) : null}
+        {userType === "gestor" && preCopySnapshot !== null ? (
+          <button
+            className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:border-amber-300 hover:bg-amber-100"
+            onClick={handleRevertCopy}
+          >
+            Desfazer cópia
           </button>
         ) : null}
         {userType !== "gestor" ? (
@@ -999,6 +1136,14 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
             onClick={copyPropostaToOrcamento}
           >
             Copiar Proposta → Orçamento
+          </button>
+        ) : null}
+        {userType !== "gestor" && preCopySnapshot !== null ? (
+          <button
+            className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:border-amber-300 hover:bg-amber-100"
+            onClick={handleRevertCopy}
+          >
+            Desfazer cópia
           </button>
         ) : null}
       </div>

@@ -1,0 +1,52 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+const BASE_URL =
+  'https://homologacao.sistema.romancemoda.com.br/hml/romance/fin/buscadados';
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+
+  const query = new URLSearchParams();
+
+  const anoorcamento = searchParams.get('anoorcamento');
+  const idgrupo = searchParams.get('idgrupo');
+  const idunidade = searchParams.get('idunidade');
+  const tipoorcamento = searchParams.get('tipoorcamento');
+  const tipoclassificacao = searchParams.get('tipoclassificacao');
+
+  if (anoorcamento) query.set('anoorcamento', anoorcamento);
+  if (idgrupo) query.set('idgrupo', idgrupo);
+  if (idunidade) query.set('idunidade', idunidade);
+  if (tipoorcamento) query.set('tipoorcamento', tipoorcamento);
+  if (tipoclassificacao) query.set('tipoclassificacao', tipoclassificacao);
+
+  const url = `${BASE_URL}?${query.toString()}`;
+
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[budget/route] API externa retornou:', response.status, errorText);
+      return NextResponse.json(
+        { error: 'Erro ao buscar dados da API externa' },
+        { status: response.status },
+      );
+    }
+
+    const text = await response.text();
+    const safeText = text.replace(/[\u0000-\u001F]+/g, '');
+    const json = JSON.parse(safeText) as Record<string, unknown>;
+    const data = json.retorno ?? json;
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('[budget/route] Erro:', error);
+    return NextResponse.json(
+      { error: 'Falha na comunicação com a API externa' },
+      { status: 500 },
+    );
+  }
+}

@@ -1,353 +1,264 @@
 # AGENTS.md
 
-## 1. Visão Geral do Projeto
+## 1. Visao Geral
 
-Este projeto é um dashboard financeiro de gestão orçamentária com foco em DFC (Demonstração do Fluxo de Caixa), construído para permitir análise, edição e revisão de valores orçamentários em uma estrutura hierárquica.
+Este projeto e um dashboard de gestao orcamentaria orientado a DFC (Demonstracao de Fluxo de Caixa), com foco em:
 
-A hierarquia principal do domínio é:
+- analise por hierarquia DFC -> Conta -> Subconta
+- edicao de valores mensais
+- comparacao de alteracoes e pendencias
+- filtros por grupo/unidade e periodo
+- consumo de dados reais via API com adaptacao para estrutura interna
 
-- DFC
-- Conta
-- Subconta
+O app trabalha com duas frentes de dados:
 
-Cada linha pode trabalhar com três tipos de valor:
+- dados vindos da API (`getBudget`) e transformados pelo `budgetAdapter`
+- snapshots em memoria para comparacao, resumo e simulacao de salvamento
 
-- `anterior`
-- `proposta`
-- `orcamento`
+## 2. O Que Ja Foi Implantado (estado atual)
 
-O sistema possui foco forte em comparação de valores, edição de proposta, identificação de pendências e resumo de salvamento com base no contexto atual da tela.
+### 2.1 Perfis de usuario
 
-## 2. Stack Tecnológica
+- alternancia entre `gestor` e `financeiro` via FAB no canto inferior esquerdo
+- `gestor` usa filtros fixos e edita `proposta`
+- `financeiro` usa filtros livres e edita `orcamento`
 
-- Next.js com App Router
+### 2.2 Filtros com IDs e labels
+
+- filtros migrados para IDs numericos na logica:
+  - `businessGroupId?: number`
+  - `businessUnitIds: number[]`
+- labels mantidas para exibicao:
+  - `businessGroup: string`
+  - `businessUnits: string[]`
+- suporte a selecao multipla de unidades com checkbox em popover
+- debounce na busca por filtros para evitar loops e chamadas excessivas
+
+### 2.3 Fluxo de API
+
+- busca por API via `src/app/budget/services/getBudget.ts`
+- payload principal:
+  - `anoorcamento`
+  - `idgrupo`
+  - `idunidade` (quando aplicavel)
+- resposta adaptada por `src/app/budget/adapters/budgetAdapter.ts`
+- adapter monta estrutura `BudgetRow` hierarquica consumida pela tabela
+
+### 2.4 Tabela orcamentaria
+
+- tabela hierarquica com colunas sticky (DFC/Conta/Subconta)
+- expansao por nivel: somente DFC, abrir contas, abrir subcontas
+- totais por coluna e media mensal orcamentaria
+- linhas derivadas calculadas:
+  - Margem Bruta = Receita - Custo - Imposto
+  - Resultado Operacional = Margem Bruta - Despesa
+  - Resultado Liquido = Resultado Operacional - Investimento
+- protecao para meses ausentes (normalizacao de `monthlyData` com zeros)
+
+### 2.5 Acoes em massa e confirmacao
+
+- copiar `anterior -> proposta` (gestor)
+- copiar `proposta -> orcamento` (financeiro)
+- zerar proposta e orcamento (acao auxiliar via UserSwitcher)
+- preencher proposta e orcamento para teste (acao auxiliar via UserSwitcher)
+- todas as acoes criticas passam por modal de confirmacao e toast
+
+### 2.6 Resumo e snapshots
+
+- modal de resumo com total de alteracoes e pendencias
+- lista detalhada por linha e mes
+- comparacao por snapshot com regras de `changeType`
+- armazenamento mock em memoria por chave de filtro (`savedData`)
+
+## 3. Stack Tecnologica
+
+- Next.js (App Router)
 - React
 - TypeScript
 - Tailwind CSS
-- `react-hot-toast`
+- react-hot-toast
+- lucide-react
 
-## 3. Estrutura de Pastas
-
-Estrutura principal esperada:
+## 4. Estrutura Real de Pastas
 
 ```text
 src/
   app/
-    budget/
-      components/
-      hooks/
-      utils/
-      types/
-    user/
-      components/
-    shared/
-      ui/
-    lib/
-    utils/
-    data/
     App.tsx
     layout.tsx
     page.tsx
+    budget/
+      adapters/
+        budgetAdapter.ts
+      components/
+        BudgetHeader.tsx
+        BudgetFilters.tsx
+        BudgetTable.tsx
+      services/
+        getBudget.ts
+      types/
+        budget.ts
+      utils/
+        budgetInsights.ts
+        csvParser.ts
+    user/
+      components/
+        UserSwitcher.tsx
+    components/
+      UserSwitcher.tsx
+      figma/
+        ImageWithFallback.tsx
+      ui/
+        popover.tsx
+        utils.ts
+    data/
+      mockData.ts
+    lib/
+      business.ts
+    shared/
+      ui/
+        ...componentes base reutilizaveis
   imports/
+    dfc_contas_subcontas.csv
   styles/
+    fonts.css
+    index.css
+    tailwind.css
+    theme.css
 ```
 
-Responsabilidades:
+Observacao:
 
-- `src/`
-  Raiz do código-fonte da aplicação. Tudo que participa diretamente da construção do dashboard deve ficar organizado a partir daqui.
+- `src/app/components/UserSwitcher.tsx` e re-export para `src/app/user/components/UserSwitcher.tsx`
+- padrao preferencial de import para novos codigos: alias `@/`
 
-- `src/app/budget/`
-  Domínio principal do sistema. Tudo que pertence diretamente ao contexto orçamentário deve ficar aqui.
+## 5. Responsabilidade de Cada Parte
 
-- `src/app/budget/components/`
-  Componentes visuais do domínio de orçamento.
-
-- `src/app/budget/components/BudgetHeader.tsx`
-  Cabeçalho principal do dashboard. Centraliza identidade visual, título ou contexto global da tela.
-
-- `src/app/budget/components/BudgetFilters.tsx`
-  Bloco de filtros da tela. Controla grupo de negócio, unidade de negócio, período, ações de limpar, buscar e salvar.
-
-- `src/app/budget/components/BudgetTable.tsx`
-  Componente central do projeto. Renderiza a hierarquia DFC -> Conta -> Subconta, calcula totais, controla expansão das linhas e executa ações como edição, cópia, reset e preenchimento.
-
-- `src/app/budget/hooks/`
-  Espaço reservado para hooks específicos do domínio de orçamento.
-
-- `src/app/budget/utils/`
-  Regras utilitárias do domínio orçamentário. Ideal para filtros, comparação de snapshots, detecção de alterações, pendências e transformações da árvore DFC.
-
-- `src/app/budget/utils/budgetInsights.ts`
-  Lógica de comparação e leitura do orçamento. Centraliza `filteredData`, detecção de mudanças, pendências e visibilidade do resumo.
-
-- `src/app/budget/utils/csvParser.ts`
-  Conversão de dados importados para a estrutura hierárquica usada pela aplicação.
-
-- `src/app/budget/types/`
-  Tipagens do domínio orçamentário.
-
-- `src/app/budget/types/budget.ts`
-  Tipos centrais do domínio de orçamento, incluindo estrutura de linha, dados mensais e metadados como `changeType`.
-
-- `src/app/user/`
-  Domínio de usuário e contexto de perfil.
-
-- `src/app/user/components/`
-  Componentes relacionados a perfil, papel ou contexto de usuário.
-
-- `src/app/user/components/UserSwitcher.tsx`
-  Controle secundário para alternar o perfil de usuário entre `gestor` e `financeiro`. Deve ser discreto, isolado e sem impacto no layout principal.
-
-- `src/app/shared/ui/`
-  Design system local da aplicação. Contém componentes de interface reutilizáveis e agnósticos de domínio.
-
-- `src/app/shared/ui/button.tsx`
-  Botão base reutilizado em toda a aplicação.
-
-- `src/app/shared/ui/dialog.tsx`
-  Modal base usado para confirmações e resumos de salvamento.
-
-- `src/app/shared/ui/popover.tsx`
-  Base para menus flutuantes e popovers, como o seletor de perfil.
-
-- `src/app/shared/ui/select.tsx`
-  Componente de seleção usado nos filtros.
-
-- `src/app/shared/ui/tooltip.tsx`
-  Exibe dicas contextuais e indicadores auxiliares da interface.
-
-- `src/app/lib/`
-  Utilitários globais, constantes compartilhadas e artefatos que podem ser consumidos por mais de um domínio.
-
-- `src/app/lib/business.ts`
-  Constantes globais relacionadas a grupos e unidades de negócio.
-
-- `src/app/utils/`
-  Espaço reservado para utilitários genéricos que não pertencem a um domínio específico.
-
-- `src/app/data/`
-  Camada de dados mock e ponto de integração futura com backend.
-
-- `src/app/data/mockData.ts`
-  Ponto de entrada dos dados simulados usados na aplicação.
-
-- `src/app/App.tsx`
-  Componente orquestrador da tela principal. Controla estado global da página, snapshots, resumo de salvamento, filtros, tipo de usuário e ligação entre componentes.
-
-- `src/app/layout.tsx`
-  Layout global do App Router. Deve concentrar estrutura base da aplicação e wrappers globais.
+### 5.1 Entradas da aplicacao
 
 - `src/app/page.tsx`
-  Entry point da rota principal.
+  - entrypoint da rota principal
 
-- `src/imports/`
-  Arquivos de importação e insumos estáticos de dados, como CSVs usados para montar a estrutura inicial do DFC.
+- `src/app/layout.tsx`
+  - layout global e `Toaster`
 
-- `src/styles/`
-  Estilos globais ou arquivos auxiliares de estilo, quando existirem.
+- `src/app/App.tsx`
+  - orquestra estado principal
+  - integra filtros, perfis, busca API, snapshots, resumo e render da tabela
 
-- `src/global.d.ts`
-  Declarações globais de tipos TypeScript usadas pelo projeto quando necessário.
+### 5.2 Dominio budget
 
-Observação importante sobre componentes:
+- `src/app/budget/services/getBudget.ts`
+  - chamada HTTP da API de orcamento
+  - montagem de query params
 
-- Nem todo componente de `shared/ui` é usado ao mesmo tempo
-- O agente deve priorizar reaproveitar componentes já existentes antes de criar novos
-- Sempre que uma funcionalidade nova puder ser implementada com `dialog`, `popover`, `select`, `button` ou `tooltip`, essa abordagem deve ser preferida
+- `src/app/budget/adapters/budgetAdapter.ts`
+  - transforma payload da API em `BudgetRow[]`
+  - normaliza meses
+  - calcula linhas derivadas (Margem/Resultados)
+  - inclui placeholders para unidades sem estrutura de conta/subconta
 
-## 4. Estrutura e Imports
+- `src/app/budget/components/BudgetFilters.tsx`
+  - UI de filtros (grupo, unidades, periodo)
+  - multi-select de unidades
 
-Regras obrigatórias para organização e importação:
+- `src/app/budget/components/BudgetTable.tsx`
+  - renderizacao hierarquica da grade
+  - edicao de celulas por perfil
+  - calculo de totais e exibicao de pendencias
 
-- Não usar imports relativos profundos como `../../../`
-- Sempre usar alias `@/`
-- Componentes de domínio não devem importar diretamente de outros domínios sem necessidade clara
-- `shared/ui` é reutilizável por todo o sistema
-- `lib` deve concentrar utilidades globais e constantes compartilhadas
+- `src/app/budget/utils/budgetInsights.ts`
+  - calculo de alteracoes, pendencias e visibilidade por contexto de filtro
 
-Exemplos corretos:
+### 5.3 Dominio user
 
-```ts
-import { Button } from '@/app/shared/ui/button';
-import { Popover } from '@/app/shared/ui/popover';
-import { BudgetTable } from '@/app/budget/components/BudgetTable';
-```
+- `src/app/user/components/UserSwitcher.tsx`
+  - troca de perfil e acoes auxiliares
 
-Evitar:
+## 6. Modelo de Estado Atual
 
-```ts
-import { Button } from '../../../shared/ui/button';
-import { Popover } from './ui/popover';
-```
+Estados principais em `App.tsx`:
 
-## 5. Organização por Domínio
+- `filters`
+  - IDs para logica/API
+  - labels para exibicao
 
-A aplicação segue organização por domínio + camadas.
+- `budgetData`
+  - fonte de verdade da tela
 
-Princípios:
+- `catalogData`
+  - base para catalogos visuais (grupos/unidades)
 
-- Cada domínio deve ser o mais independente possível
-- Lógica de `budget` não deve ficar em componentes genéricos
-- Componentes de UI base devem existir apenas em `shared/ui`
-- Regras de negócio do orçamento devem permanecer dentro de `budget`
-- Componentes de `user` devem cuidar apenas de contexto de usuário, perfil e permissões visuais
+- `originalDataSnapshot`
+  - base comparativa para resumo de mudancas
 
-Quando criar novo código:
+- `savedData`
+  - simulacao de dados salvos em memoria
 
-- Se for regra do orçamento, colocar em `budget`
-- Se for controle de usuário, colocar em `user`
-- Se for componente base reutilizável, colocar em `shared/ui`
-- Se for utilitário global sem domínio específico, colocar em `lib` ou `utils`
+Regras importantes:
 
-## 6. Regras de Negócio (CRÍTICO)
+- nao usar `filteredData` como fonte de verdade
+- evitar `setFilters` sem guarda de igualdade
+- evitar efeitos circulares entre filtro -> busca -> filtro
 
-### Alterações de valores
+## 7. Regras de Negocio Ativas
 
-A lógica de alteração da `proposta` é sensível ao tipo de ação executada.
+### 7.1 Hierarquia
 
-- Edição manual: conta como alteração
-- Copiar `anterior -> proposta`: conta como alteração
-- Zerar proposta: nao conta como alteração no resumo
-- Editar após zerar: conta como alteração
+- preservar: DFC -> Conta -> Subconta
+- nao remover niveis estruturais sem solicitacao explicita
 
-O rastreamento dessas ações deve ser feito por metadado no valor mensal, usando `changeType`, por exemplo:
+### 7.2 Alteracoes e pendencias
 
-- `manual`
-- `copy`
-- `reset`
-- `null`
+- `changeType` suportado: `manual`, `copy`, `reset`, `null`
+- `reset` nao entra no resumo de alteracoes
+- pendencia:
+  - gestor: `proposta === 0`
+  - financeiro: `orcamento === 0`
 
-Regras práticas:
+### 7.3 Filtros
 
-- Se `proposta` mudou e `changeType` for `manual` ou `copy`, a alteração deve entrar no resumo
-- Se `changeType` for `reset`, a alteração nao deve entrar no resumo
-- Se o usuário editar manualmente após um reset, o `changeType` deve passar a `manual`
+- grupo deve limpar unidades selecionadas quando houver troca de grupo
+- selecao multipla de unidades deve ser acumulativa
+- filtros por ID dirigem API e logica de comparacao
 
-### Resumo de salvamento
+### 7.4 Perfil gestor
 
-O resumo de salvamento deve considerar apenas o contexto filtrado atual da UI.
+- filtros fixos
+- bloqueio de acoes de filtro livres
+- proposta zerada conforme regra de perfil
 
-Ele deve:
+## 8. Padrões de Implementacao
 
-- considerar apenas o filtro ativo
-- usar `baselineSnapshot` como base de comparação
-- mostrar alterações reais
-- mostrar pendências quando `proposta === 0`
-
-O fluxo correto de comparação é:
-
-- `baselineSnapshot -> data`
-
-Observação importante:
-
-- `originalSnapshot` representa histórico/base persistida
-- `baselineSnapshot` representa a base atual da interface para comparação de mudanças depois de ações automáticas como reset
-
-### Hierarquia
-
-A estrutura do domínio deve sempre respeitar:
-
-- DFC
-- Conta
-- Subconta
-
-Mudanças de visualização, filtros, cálculos e resumos não devem quebrar essa estrutura. O agente deve preservar a árvore e evitar remover nós estruturalmente importantes sem necessidade explícita.
-
-## 7. Estado da Aplicação
-
-Estados conceituais importantes:
-
-- `data`
-  Estado principal da aplicação. É a fonte de verdade.
-
-- `filteredData`
-  Derivação visual via `useMemo`. Serve para exibição e leitura contextual, não para persistência nem como base primária de edição.
-
-- `originalSnapshot`
-  Histórico base do ciclo persistido/carregado.
-
-- `baselineSnapshot`
-  Base usada pela UI para comparação de alterações no resumo atual.
-
-Regras obrigatórias:
-
-- Nunca usar `filteredData` como fonte de verdade
-- Nunca sobrescrever snapshots automaticamente sem motivo de negócio claro
-- Atualizar `originalSnapshot` apenas em eventos que representem nova base persistida ou recarregada
-- Atualizar `baselineSnapshot` apenas quando a regra de negócio exigir uma nova base visual de comparação, como após reset ou save
-
-## 8. Padrões de Código
-
-- Sempre usar imutabilidade com `map`, `spread`, `Object.fromEntries` e padrões equivalentes
-- Não mutar objetos diretamente
-- Componentes devem ser reutilizáveis e bem isolados
-- Separar lógica em `utils` quando possível
-- Preferir funções puras para transformação de dados
-- Manter tipagem explícita e legível
-- Evitar acoplamento excessivo entre componentes visuais e regras de negócio
+- usar atualizacao imutavel com `map`, `spread`, `Object.fromEntries`
+- evitar mutacao direta de objetos/snapshots
+- manter tipagem explicita e evitar `any`
+- proteger calculos contra dados incompletos da API (ex.: meses ausentes)
 
 ## 9. UX/UI Guidelines
 
-- A interface deve ser limpa, moderna e consistente com o dashboard atual
-- Evitar `alert()` nativo
-- Preferir `toast`, `dialog`, `popover` e componentes visuais customizados
-- Usar FAB apenas para ações secundárias ou auxiliares
-- Manter coerência visual com as cores já usadas no dashboard
-- Não poluir a interface principal com controles experimentais
-- Preservar legibilidade de tabela, modais e filtros
+- nao usar `alert()` nativo
+- usar `toast`, `dialog`, `popover`, `tooltip`
+- manter legibilidade da tabela como prioridade
+- preservar consistencia visual da paleta atual
 
-## 10. Perfis de Usuário
-
-Existem dois modos de usuário planejados:
-
-### Financeiro
-
-- acesso completo
-- pode editar valores
-- vê todos os botões e ações
-
-### Gestor
-
-- visão simplificada
-- sem ações destrutivas
-- foco em leitura e análise
-
-Ao implementar diferenças entre perfis, o agente deve preservar a consistência do layout e evitar duplicação de interface.
-
-## 11. O que o agente DEVE fazer
-
-- Seguir a estrutura existente do projeto
-- Respeitar rigorosamente as regras de negócio
-- Preservar a hierarquia DFC -> Conta -> Subconta
-- Manter consistência visual com a UI atual
-- Escrever código limpo, legível e tipado
-- Isolar lógica de transformação em utilitários quando fizer sentido
-- Tratar `filteredData` como derivação visual
-- Manter comportamento previsível no resumo de salvamento
-
-## 12. O que o agente NÃO deve fazer
-
-- Não alterar a estrutura do projeto sem necessidade real
-- Não quebrar regras de negócio já definidas
-- Não usar `alert()`
-- Não duplicar lógica em múltiplos componentes
-- Não usar `any` sem necessidade real
-- Não transformar `filteredData` em fonte de verdade
-- Não mutar snapshots diretamente
-- Não esconder nós estruturais da hierarquia sem intenção explícita do produto
-
-## 13. Comandos úteis
+## 10. Comandos Uteis
 
 ```bash
+npm install
 npm run dev
 npm run build
 ```
 
-## 14. Observações importantes
+## 11. Cuidados para Evolucao
 
-- O projeto usa dados mock por enquanto
-- Filtros devem afetar apenas visualização e contexto de leitura
-- Salvamento deve respeitar o contexto atual exibido ao usuário
-- O resumo de alterações e pendências depende fortemente da consistência entre `data`, `baselineSnapshot` e `originalSnapshot`
-- Mudanças em regras de comparação devem ser feitas com cuidado, pois afetam diretamente a confiança do usuário no sistema
+- qualquer ajuste no resumo deve validar impacto em:
+  - `getChanges`
+  - `getPendencias`
+  - `getVisibleChanges`
+- mudancas no adapter devem validar:
+  - calculo das linhas derivadas
+  - normalizacao de meses
+  - presenca de unidades sem estrutura
+- mudancas de filtro nao podem reintroduzir loop de renderizacao
+- ao mexer na busca API, validar combinacao `idgrupo`/`idunidade` e comportamento com multi-select

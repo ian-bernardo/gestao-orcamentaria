@@ -7,7 +7,9 @@ import { BudgetHeader } from './budget/components/BudgetHeader';
 import { BudgetFilters } from './budget/components/BudgetFilters';
 import { BudgetTable, BudgetTableActions } from './budget/components/BudgetTable';
 import { UserSwitcher } from './user/components/UserSwitcher';
-import { BUSINESS_GROUPS, BUSINESS_UNITS } from './lib/business';
+import { getBudget } from './budget/services/getBudget';
+import { saveBudgetEntry, collectSaveEntries, SaveBudgetResult } from './budget/services/saveBudget';
+import { budgetAdapter } from '@/app/budget/adapters/budgetAdapter';
 import {
   Dialog,
   DialogContent,
@@ -17,7 +19,6 @@ import {
   DialogTitle,
 } from './shared/ui/dialog';
 import { Button } from './shared/ui/button';
-import { generateMockData } from './data/mockData';
 import { BudgetRow } from './budget/types/budget';
 import {
   BudgetFiltersState,
@@ -34,9 +35,17 @@ interface SavedBudgetEntry {
   data: BudgetRow[];
 }
 
+interface SelectOption {
+  label: string;
+  value: number;
+}
+
+const GESTOR_FIXED_GROUP_LABEL = 'Grupo Norte';
 const GESTOR_FIXED_FILTERS: BudgetFiltersState = {
-  businessGroup: 'Grupo Norte',
-  businessUnits: [BUSINESS_UNITS[0]],
+  businessGroupId: undefined,
+  businessUnitIds: [],
+  businessGroup: GESTOR_FIXED_GROUP_LABEL,
+  businessUnits: [],
   startMonth: 4,
   endMonth: 5,
 };
@@ -61,9 +70,11 @@ function SummarySection({
 }) {
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-        <span className="text-xs text-slate-500">{items.length} linhas</span>
+        <span className="shrink-0 whitespace-nowrap pt-0.5 text-xs text-slate-500">
+          {items.length} linhas
+        </span>
       </div>
 
       {items.length === 0 ? (
@@ -133,6 +144,8 @@ export default function App() {
     'consolidado',
   );
   const [filters, setFilters] = useState<BudgetFiltersState>({
+    businessGroupId: undefined,
+    businessUnitIds: [],
     businessGroup: '',
     businessUnits: [],
     startMonth: 1,
@@ -146,13 +159,22 @@ export default function App() {
   );
   const [lastFinanceiroFilters, setLastFinanceiroFilters] =
     useState<BudgetFiltersState | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveErrors, setSaveErrors] = useState<Pick<SaveBudgetResult, 'idgestao' | 'nrmes' | 'message'>[]>([]);
+  const [filtersLockedByUrl, setFiltersLockedByUrl] = useState(false);
   const budgetTableActionsRef = useRef<BudgetTableActions | null>(null);
+  const isFirstRenderRef = useRef(true);
 
   const deepClone = <T,>(data: T): T => JSON.parse(JSON.stringify(data));
+
+  const numberArrayEquals = (a: number[], b: number[]) =>
+    a.length === b.length && a.every((value, index) => value === b[index]);
+
+  const stringArrayEquals = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((value, index) => value === b[index]);
 
   const createSnapshot = (rows: BudgetRow[]): BudgetRow[] => {
     const clonedRows = deepClone(rows);
@@ -177,25 +199,19 @@ export default function App() {
 
   const getFilterKey = (currentFilters: BudgetFiltersState) =>
     [
-      currentFilters.businessGroup,
-      [...currentFilters.businessUnits].sort().join(','),
+      currentFilters.businessGroupId ?? 'all',
+      [...currentFilters.businessUnitIds].sort((a, b) => a - b).join(','),
       currentFilters.startMonth,
       currentFilters.endMonth,
     ].join('|');
 
-  const getAvailableUnitsForGroup = (
-    rows: BudgetRow[],
-    businessGroup: string,
-  ) => {
-    const units = new Set<string>();
+  const getAllGroupOptions = (rows: BudgetRow[]): SelectOption[] => {
+    const groups = new Map<number, string>();
 
     const visit = (currentRows: BudgetRow[]) => {
       currentRows.forEach((row) => {
-        const matchesGroup =
-          !businessGroup || row.businessGroup === businessGroup;
-
-        if (matchesGroup && row.businessUnit) {
-          units.add(row.businessUnit);
+        if (row.businessGroupId != null && row.businessGroup) {
+          groups.set(row.businessGroupId, row.businessGroup);
         }
 
         if (row.children?.length) {
@@ -206,13 +222,65 @@ export default function App() {
 
     visit(rows);
 
-    return BUSINESS_UNITS.filter((unit) => units.has(unit));
+    return Array.from(groups.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  };
+
+  const getAllUnitOptions = (rows: BudgetRow[]): SelectOption[] => {
+    const units = new Map<number, string>();
+
+    const visit = (currentRows: BudgetRow[]) => {
+      currentRows.forEach((row) => {
+        if (row.businessUnitId != null && row.businessUnit) {
+          units.set(row.businessUnitId, row.businessUnit);
+        }
+
+        if (row.children?.length) {
+          visit(row.children);
+        }
+      });
+    };
+
+    visit(rows);
+
+    return Array.from(units.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  };
+
+  const getAvailableUnitsForGroup = (
+    rows: BudgetRow[],
+    businessGroupId?: number,
+  ): SelectOption[] => {
+    const units = new Map<number, string>();
+
+    const visit = (currentRows: BudgetRow[]) => {
+      currentRows.forEach((row) => {
+        const matchesGroup =
+          businessGroupId == null || row.businessGroupId === businessGroupId;
+
+        if (matchesGroup && row.businessUnitId != null && row.businessUnit) {
+          units.set(row.businessUnitId, row.businessUnit);
+        }
+
+        if (row.children?.length) {
+          visit(row.children);
+        }
+      });
+    };
+
+    visit(rows);
+
+    return Array.from(units.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   };
 
   const hydrateRowsForUnit = (
     rows: BudgetRow[],
-    businessGroup: string,
-    businessUnit: string,
+    businessGroupId?: number,
+    businessUnitId?: number,
   ): BudgetRow[] => {
     const visit = (row: BudgetRow): BudgetRow => {
       const children = row.children?.map(visit);
@@ -224,9 +292,10 @@ export default function App() {
         };
       }
 
-      const matchesGroup = !businessGroup || row.businessGroup === businessGroup;
+      const matchesGroup =
+        businessGroupId == null || row.businessGroupId === businessGroupId;
       const matchesUnit =
-        !businessUnit || row.businessUnit === businessUnit;
+        businessUnitId == null || row.businessUnitId === businessUnitId;
       const shouldKeepValues = matchesGroup && matchesUnit;
 
       return {
@@ -249,13 +318,13 @@ export default function App() {
 
   const groupByUnit = (
     rows: BudgetRow[],
-    units: string[],
-    businessGroup: string,
+    units: SelectOption[],
+    businessGroupId?: number,
   ) =>
-    units.reduce<Record<string, BudgetRow[]>>((acc, unit) => {
-      acc[unit] = hydrateRowsForUnit(rows, businessGroup, unit);
+    units.reduce<Record<number, BudgetRow[]>>((acc, unit) => {
+      acc[unit.value] = hydrateRowsForUnit(rows, businessGroupId, unit.value);
       return acc;
-    }, {});
+    }, {} as Record<number, BudgetRow[]>);
 
   const resetPropostasForGestor = (rows: BudgetRow[]): BudgetRow[] =>
     rows.map((row) => ({
@@ -274,66 +343,151 @@ export default function App() {
         : row.children,
     }));
 
-  const applySavedDataToFinanceiro = (persistedRows: BudgetRow[]): BudgetRow[] => {
-    const savedById = new Map<string, BudgetRow>();
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
 
-    const indexRows = (rows: BudgetRow[]) => {
-      rows.forEach((row) => {
-        savedById.set(row.id, row);
-        row.children?.forEach((child) => indexRows([child]));
-      });
+    const idgrupo = params.get('p_gn');
+    const idunidade = params.get('p_un');
+    const mesInicial = params.get('p_mes_inicial');
+    const mesFinal = params.get('p_mes_final');
+    const permissao = params.get('p_permissao');
+
+    const nextGroupId = idgrupo ? Number(idgrupo) : undefined;
+    const nextUnitIds = idunidade ? [Number(idunidade)] : [];
+    const nextStartMonth = mesInicial ? Number(mesInicial) : 1;
+    const nextEndMonth = mesFinal ? Number(mesFinal) : 12;
+
+    setFilters((prev) => {
+      const unchanged =
+        prev.businessGroupId === nextGroupId &&
+        numberArrayEquals(prev.businessUnitIds, nextUnitIds) &&
+        prev.startMonth === nextStartMonth &&
+        prev.endMonth === nextEndMonth &&
+        prev.businessGroup === '' &&
+        prev.businessUnits.length === 0;
+
+      if (unchanged) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        businessGroupId: nextGroupId,
+        businessUnitIds: nextUnitIds,
+        businessGroup: '',
+        businessUnits: [],
+        startMonth: nextStartMonth,
+        endMonth: nextEndMonth,
+      };
+    });
+
+    setUserType(permissao === 'S' ? 'financeiro' : 'gestor');
+    setFiltersLockedByUrl(Boolean(idgrupo || idunidade || mesInicial || mesFinal));
+  }, []);
+
+  // Carregar catálogo de grupos e unidades na inicialização
+  useEffect(() => {
+    const loadCatalog = async () => {
+      try {
+        const apiData = await getBudget({
+          anoorcamento: 2026,
+        });
+        const adapted = budgetAdapter(apiData);
+        const snapshot = createSnapshot(adapted);
+        setCatalogData(snapshot);
+      } catch (error) {
+        console.error('Erro ao carregar catálogo:', error);
+      }
     };
 
-    indexRows(persistedRows);
+    loadCatalog();
+  }, []);
 
-    const visit = (rows: BudgetRow[]): BudgetRow[] =>
-      rows.map((row) => {
-        const savedRow = savedById.get(row.id);
+  const handleSearch = async (
+    currentFilters: BudgetFiltersState,
+  ) => {
+    try {
+      setIsLoading(true);
+      setLoadError('');
 
-        return {
-          ...row,
-          monthlyData: Object.fromEntries(
-            Object.entries(row.monthlyData).map(([monthKey, monthData]) => {
-              const savedMonth = savedRow?.monthlyData[Number(monthKey)];
+      const idunidade =
+        currentFilters.businessUnitIds.length === 1
+          ? currentFilters.businessUnitIds[0]
+          : undefined;
 
-              return [
-                monthKey,
-                {
-                  ...monthData,
-                  proposta: savedMonth?.proposta ?? 0,
-                  orcamento: 0,
-                  changeType: null,
-                },
-              ];
-            }),
-          ) as BudgetRow['monthlyData'],
-          children: row.children ? visit(row.children) : row.children,
-        };
+      const apiData = await getBudget({
+        anoorcamento: 2026,
+        idgrupo: currentFilters.businessGroupId,
+        idunidade,
       });
 
-    return visit(persistedRows);
+      const adapted = budgetAdapter(apiData);
+      const data = deepClone(adapted);
+
+      setBudgetData(data);
+      // Atualizar catálogo apenas se ainda não foi carregado
+      setCatalogData((prev) =>
+        prev.length === 0 ? createSnapshot(data) : prev
+      );
+      setOriginalDataSnapshot(createSnapshot(data));
+    } catch (error) {
+      console.error('Erro ao buscar dados:', error);
+      setLoadError('Erro ao buscar dados da API');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        setIsLoading(true);
-        setLoadError('');
-        const data = deepClone(await generateMockData());
-        setBudgetData(data);
-        setCatalogData(createSnapshot(data));
-        const nextSnapshot = createSnapshot(data);
-        setOriginalDataSnapshot(nextSnapshot);
-      } catch (error) {
-        console.error('Erro ao carregar dados do orcamento:', error);
-        setLoadError('Nao foi possivel carregar os dados iniciais.');
-      } finally {
-        setIsLoading(false);
-      }
-    }
+  const normalizedUnitIdsKey = useMemo(
+    () => [...filters.businessUnitIds].sort((a, b) => a - b).join(','),
+    [filters.businessUnitIds],
+  );
 
-    void loadData();
-  }, []);
+  const filtersSearchKey = `${filters.businessGroupId ?? 'all'}|${normalizedUnitIdsKey}|${filters.startMonth}|${filters.endMonth}`;
+
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+    setBudgetData([]);
+    setOriginalDataSnapshot([]);
+  }, [filtersSearchKey]);
+
+  const allGroups = useMemo(
+    () => getAllGroupOptions(catalogData),
+    [catalogData],
+  );
+
+  const allUnits = useMemo(
+    () => getAllUnitOptions(catalogData),
+    [catalogData],
+  );
+
+  useEffect(() => {
+    setFilters((prev) => {
+      const nextGroupLabel =
+        prev.businessGroupId == null
+          ? ''
+          : allGroups.find((group) => group.value === prev.businessGroupId)?.label ?? '';
+      const nextUnitLabels = allUnits
+        .filter((unit) => prev.businessUnitIds.includes(unit.value))
+        .map((unit) => unit.label);
+
+      const groupUnchanged = prev.businessGroup === nextGroupLabel;
+      const unitsUnchanged = stringArrayEquals(prev.businessUnits, nextUnitLabels);
+
+      if (groupUnchanged && unitsUnchanged) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        businessGroup: nextGroupLabel,
+        businessUnits: nextUnitLabels,
+      };
+    });
+  }, [allGroups, allUnits]);
 
   const filteredData = useMemo(
     () => getFilteredData(budgetData, filters),
@@ -341,28 +495,33 @@ export default function App() {
   );
 
   const isGestor = userType === 'gestor';
-  const isAllGroups = filters.businessGroup === '';
+  const isAllGroups = filters.businessGroupId == null;
   const availableUnits = useMemo(
-    () => getAvailableUnitsForGroup(catalogData, filters.businessGroup),
-    [catalogData, filters.businessGroup],
+    () => getAvailableUnitsForGroup(catalogData, filters.businessGroupId),
+    [catalogData, filters.businessGroupId],
   );
+
   const selectedUnits = useMemo(() => {
-    if (filters.businessUnits.length > 0) {
-      return filters.businessUnits;
+    if (filters.businessUnitIds.length > 0) {
+      return availableUnits.filter((unit) =>
+        filters.businessUnitIds.includes(unit.value),
+      );
     }
 
     return availableUnits;
-  }, [availableUnits, filters.businessUnits]);
+  }, [availableUnits, filters.businessUnitIds]);
+
   const groupedDataByUnit = useMemo(
-    () => groupByUnit(filteredData, selectedUnits, filters.businessGroup),
-    [filteredData, selectedUnits, filters.businessGroup],
+    () => groupByUnit(filteredData, selectedUnits, filters.businessGroupId),
+    [filteredData, selectedUnits, filters.businessGroupId],
   );
+
   const shouldSplitByUnit =
     userType === 'financeiro' && viewMode === 'por_unidade';
 
   const allChanges = useMemo(
-    () => getChanges(originalDataSnapshot, budgetData),
-    [originalDataSnapshot, budgetData],
+    () => getChanges(originalDataSnapshot, budgetData, userType),
+    [originalDataSnapshot, budgetData, userType],
   );
 
   const changes = useMemo(
@@ -387,22 +546,99 @@ export default function App() {
 
   const handleFilterChange = (
     key: string,
-    value: string | number | string[],
+    value: string | number | string[] | number[] | undefined,
   ) => {
     if (isGestor) {
       return;
     }
 
     setFilters((prev) => {
-      if (key === 'businessGroup') {
+      if (key === 'businessGroupId') {
+        const groupId = typeof value === 'number' ? value : undefined;
+        const group =
+          groupId == null ? undefined : allGroups.find((g) => g.value === groupId);
+
+        const unchanged =
+          prev.businessGroupId === groupId &&
+          prev.businessGroup === (group?.label ?? '') &&
+          prev.businessUnitIds.length === 0 &&
+          prev.businessUnits.length === 0;
+
+        if (unchanged) {
+          return prev;
+        }
+
         return {
           ...prev,
-          businessGroup: String(value),
+          businessGroupId: groupId,
+          businessGroup: group?.label ?? '',
+          businessUnitIds: [],
           businessUnits: [],
         };
       }
 
-      return { ...prev, [key]: value };
+      if (key === 'businessUnitIds') {
+        const unitIds = Array.isArray(value)
+          ? (value as number[])
+          : [];
+        const unitLabels = allUnits
+          .filter((unit) => unitIds.includes(unit.value))
+          .map((unit) => unit.label);
+
+        if (
+          numberArrayEquals(prev.businessUnitIds, unitIds) &&
+          stringArrayEquals(prev.businessUnits, unitLabels)
+        ) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          businessUnitIds: unitIds,
+          businessUnits: unitLabels,
+        };
+      }
+
+      if (key === 'businessUnits') {
+        return prev;
+      }
+
+      if (key === 'businessGroup') {
+        if (typeof value !== 'string' || prev.businessGroup === value) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          businessGroup: value,
+        };
+      }
+
+      if (key === 'startMonth') {
+        const month = typeof value === 'number' ? value : prev.startMonth;
+        if (prev.startMonth === month) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          startMonth: month,
+        };
+      }
+
+      if (key === 'endMonth') {
+        const month = typeof value === 'number' ? value : prev.endMonth;
+        if (prev.endMonth === month) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          endMonth: month,
+        };
+      }
+
+      return { ...prev, [key]: value } as BudgetFiltersState;
     });
   };
 
@@ -411,59 +647,81 @@ export default function App() {
       return;
     }
 
-    setFilters({
-      businessGroup: '',
-      businessUnits: [],
-      startMonth: 1,
-      endMonth: 12,
+    setFilters((prev) => {
+      const nextFilters: BudgetFiltersState = {
+        businessGroupId: undefined,
+        businessUnitIds: [],
+        businessGroup: '',
+        businessUnits: [],
+        startMonth: 1,
+        endMonth: 12,
+      };
+
+      const unchanged =
+        prev.businessGroupId == null &&
+        prev.businessUnitIds.length === 0 &&
+        prev.businessGroup === '' &&
+        prev.businessUnits.length === 0 &&
+        prev.startMonth === 1 &&
+        prev.endMonth === 12;
+
+      return unchanged ? prev : nextFilters;
     });
   };
 
   useEffect(() => {
-    if (isGestor) {
-      return;
-    }
-
-    setFilters((prev) => {
-      const nextUnits = prev.businessUnits.filter((unit) =>
-        availableUnits.includes(unit),
-      );
-
-      if (nextUnits.length === prev.businessUnits.length) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        businessUnits: nextUnits,
-      };
-    });
-  }, [availableUnits, isGestor]);
-
-  useEffect(() => {
     if (userType === 'gestor') {
       setLastFinanceiroFilters(filters);
-      setFilters(GESTOR_FIXED_FILTERS);
+      const gestorGroup = allGroups.find(
+        (group) => group.label === GESTOR_FIXED_GROUP_LABEL,
+      );
+
+      const nextGestorFilters: BudgetFiltersState = {
+        ...GESTOR_FIXED_FILTERS,
+        businessGroupId: gestorGroup?.value,
+        businessGroup: gestorGroup?.label ?? GESTOR_FIXED_GROUP_LABEL,
+      };
+
+      setFilters((prev) => {
+        const unchanged =
+          prev.businessGroupId === nextGestorFilters.businessGroupId &&
+          numberArrayEquals(prev.businessUnitIds, nextGestorFilters.businessUnitIds) &&
+          prev.businessGroup === nextGestorFilters.businessGroup &&
+          stringArrayEquals(prev.businessUnits, nextGestorFilters.businessUnits) &&
+          prev.startMonth === nextGestorFilters.startMonth &&
+          prev.endMonth === nextGestorFilters.endMonth;
+
+        return unchanged ? prev : nextGestorFilters;
+      });
       return;
     }
 
     setFilters((prev) => {
       const isUsingGestorFilters =
-        prev.businessGroup === GESTOR_FIXED_FILTERS.businessGroup &&
-        prev.businessUnits.length === GESTOR_FIXED_FILTERS.businessUnits.length &&
-        prev.businessUnits.every(
-          (unit, index) => unit === GESTOR_FIXED_FILTERS.businessUnits[index],
-        ) &&
+        prev.businessGroup === GESTOR_FIXED_GROUP_LABEL &&
+        prev.businessUnitIds.length === 0 &&
         prev.startMonth === GESTOR_FIXED_FILTERS.startMonth &&
         prev.endMonth === GESTOR_FIXED_FILTERS.endMonth;
 
       if (isUsingGestorFilters && lastFinanceiroFilters) {
+        const unchanged =
+          prev.businessGroupId === lastFinanceiroFilters.businessGroupId &&
+          numberArrayEquals(prev.businessUnitIds, lastFinanceiroFilters.businessUnitIds) &&
+          prev.businessGroup === lastFinanceiroFilters.businessGroup &&
+          stringArrayEquals(prev.businessUnits, lastFinanceiroFilters.businessUnits) &&
+          prev.startMonth === lastFinanceiroFilters.startMonth &&
+          prev.endMonth === lastFinanceiroFilters.endMonth;
+
+        if (unchanged) {
+          return prev;
+        }
+
         return lastFinanceiroFilters;
       }
 
       return prev;
     });
-  }, [lastFinanceiroFilters, userType]);
+  }, [allGroups, lastFinanceiroFilters, userType]);
 
   useEffect(() => {
     if (userType !== 'gestor') {
@@ -487,64 +745,64 @@ export default function App() {
   };
 
   const handleOpenSaveModal = () => setIsSaveModalOpen(true);
-  const handleCloseSaveModal = () => setIsSaveModalOpen(false);
+  const handleCloseSaveModal = () => {
+    setIsSaveModalOpen(false);
+    setSaveErrors([]);
+  };
 
-  const handleConfirmSave = () => {
+  const handleConfirmSave = async () => {
     setIsSaving(true);
+    setSaveErrors([]);
 
     try {
-      console.log('Salvando dados filtrados...', {
-        filters,
+      const tipoorcamento = userType === 'gestor' ? 'P' : 'O';
+
+      const entries = collectSaveEntries(
         filteredData,
-        changes,
-        pendencias,
-      });
+        tipoorcamento,
+        filters.startMonth,
+        filters.endMonth,
+      );
+
+      const results = await Promise.all(
+        entries.map((entry) => saveBudgetEntry(entry)),
+      );
+
+      const failures = results.filter((r) => !r.success);
+
+      if (failures.length > 0) {
+        setSaveErrors(failures);
+        toast.error(
+          `${failures.length} ${failures.length === 1 ? 'registro falhou' : 'registros falharam'} ao salvar.`,
+          { position: 'top-right', duration: 5000 },
+        );
+        return;
+      }
+
       const key = getFilterKey(filters);
       const nextSavedData = createSnapshot(filteredData);
       const nextSnapshot = createSnapshot(budgetData);
 
       setSavedData((prev) => [
         ...prev.filter((item) => item.key !== key),
-        {
-          key,
-          data: nextSavedData,
-        },
+        { key, data: nextSavedData },
       ]);
       setOriginalDataSnapshot(nextSnapshot);
-      toast.success('Dados salvos com sucesso!');
+      budgetTableActionsRef.current?.clearCopySnapshot();
+
+      toast.success('Dados salvos com sucesso!', {
+        position: 'top-right',
+        duration: 3000,
+      });
+      setIsSaveModalOpen(false);
     } catch (error) {
-      console.error('Erro ao salvar dados:', error);
-      toast.error('Nao foi possivel salvar os dados.');
+      console.error('Erro ao salvar:', error);
+      toast.error('Erro inesperado ao salvar. Tente novamente.', {
+        position: 'top-right',
+        duration: 4000,
+      });
     } finally {
       setIsSaving(false);
-      setIsSaveModalOpen(false);
-    }
-  };
-
-  const handleSearch = () => {
-    console.log('Buscando com filtros:', filters);
-
-    try {
-      const key = getFilterKey(filters);
-      const found = savedData.find((item) => item.key === key);
-
-      if (!found) {
-        toast('Nenhum dado salvo encontrado para este filtro.');
-        return;
-      }
-
-      const nextData =
-        userType === 'financeiro'
-          ? applySavedDataToFinanceiro(createSnapshot(found.data))
-          : createSnapshot(found.data);
-      const nextSnapshot = createSnapshot(nextData);
-
-      setLoadError('');
-      setBudgetData(nextData);
-      setOriginalDataSnapshot(nextSnapshot);
-    } catch (error) {
-      console.error('Erro ao buscar dados filtrados:', error);
-      setLoadError('Nao foi possivel atualizar os dados.');
     }
   };
 
@@ -556,14 +814,14 @@ export default function App() {
         <BudgetFilters
           filters={filters}
           availableUnits={availableUnits}
-          allGroups={BUSINESS_GROUPS}
-          isReadOnly={isGestor}
+          allGroups={allGroups}
+          isReadOnly={isGestor || filtersLockedByUrl}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           onFilterChange={handleFilterChange}
           onClear={handleClear}
           onSave={handleOpenSaveModal}
-          onSearch={handleSearch}
+          onSearch={() => void handleSearch(filters)}
         />
 
         <Dialog open={isSaveModalOpen} onOpenChange={setIsSaveModalOpen}>
@@ -579,7 +837,7 @@ export default function App() {
               <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3">
                 <div className="flex items-center gap-2 text-sky-700">
                   <CheckCircle2 className="h-4 w-4" />
-                  <span className="text-sm font-medium">Alteracoes reais</span>
+                  <span className="text-sm font-medium">Alterações realizadas</span>
                 </div>
                 <div className="mt-1 text-2xl font-semibold text-slate-900">
                   {changeCount}
@@ -599,8 +857,16 @@ export default function App() {
 
             <div className="grid max-h-[52vh] gap-6 overflow-y-auto pr-2 lg:grid-cols-2">
               <SummarySection
-                title="Alteracoes na proposta"
-                emptyText="Nenhuma alteracao manual encontrada neste recorte."
+                title={
+                  userType === 'gestor'
+                    ? 'Alterações na proposta'
+                    : 'Alterações no orçamento'
+                }
+                emptyText={
+                  userType === 'gestor'
+                    ? 'Nenhuma alteração manual encontrada neste recorte.'
+                    : 'Nenhuma alteração no orçamento encontrada neste recorte.'
+                }
                 items={changes}
                 type="changes"
               />
@@ -628,10 +894,25 @@ export default function App() {
               >
                 Cancelar
               </Button>
-              <Button onClick={handleConfirmSave} disabled={isSaving}>
+              <Button onClick={() => void handleConfirmSave()} disabled={isSaving}>
                 {isSaving ? 'Salvando...' : 'Confirmar'}
               </Button>
             </DialogFooter>
+
+            {saveErrors.length > 0 ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <p className="mb-2 text-sm font-semibold text-red-700">
+                  Falhas no salvamento ({saveErrors.length} {saveErrors.length === 1 ? 'registro' : 'registros'})
+                </p>
+                <ul className="max-h-32 space-y-1 overflow-y-auto">
+                  {saveErrors.map((err, i) => (
+                    <li key={i} className="text-xs text-red-600">
+                      ID {err.idgestao} · Mês {err.nrmes}: {err.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </DialogContent>
         </Dialog>
 
@@ -647,14 +928,14 @@ export default function App() {
           ) : (
             (shouldSplitByUnit ? (
               <div className="space-y-8">
-                {Object.entries(groupedDataByUnit).map(([unit, unitData]) => (
-                  <div key={unit} className="mb-6 space-y-2">
+                {selectedUnits.map((unit) => (
+                  <div key={unit.value} className="mb-6 space-y-2">
                     <div className="px-1">
-                      <h3 className="text-sm font-semibold text-slate-700">{unit}</h3>
+                      <h3 className="text-sm font-semibold text-slate-700">{unit.label}</h3>
                     </div>
                     <BudgetTable
                       data={budgetData}
-                      visibleData={unitData}
+                      visibleData={groupedDataByUnit[unit.value] ?? filteredData}
                       onDataChange={handleBudgetDataChange}
                       onBaselineChange={() => {}}
                       onManualProposalEdit={handleManualProposalEdit}
@@ -671,7 +952,7 @@ export default function App() {
                 {userType === 'financeiro' && !isAllGroups && selectedUnits.length === 1 ? (
                   <div className="px-1">
                     <h3 className="text-sm font-semibold text-slate-900">
-                      {selectedUnits[0]}
+                      {selectedUnits[0].label}
                     </h3>
                   </div>
                 ) : null}
@@ -680,7 +961,7 @@ export default function App() {
                   data={budgetData}
                   visibleData={
                     userType === 'financeiro' && selectedUnits.length === 1
-                      ? groupedDataByUnit[selectedUnits[0]] ?? filteredData
+                      ? groupedDataByUnit[selectedUnits[0].value] ?? filteredData
                       : filteredData
                   }
                   onDataChange={handleBudgetDataChange}

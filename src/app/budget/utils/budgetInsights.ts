@@ -16,6 +16,8 @@ const monthNames = [
 ] as const;
 
 export interface BudgetFiltersState {
+  businessGroupId?: number;
+  businessUnitIds: number[];
   businessGroup: string;
   businessUnits: string[];
   startMonth: number;
@@ -34,6 +36,8 @@ export interface ChangeItem {
   dfc: string;
   conta: string;
   subconta: string;
+  businessGroupId?: number;
+  businessUnitId?: number;
   businessGroup?: string;
   businessUnit?: string;
   months: ChangeMonthItem[];
@@ -44,6 +48,8 @@ export interface PendingItem {
   dfc: string;
   conta: string;
   subconta: string;
+  businessGroupId?: number;
+  businessUnitId?: number;
   businessGroup?: string;
   businessUnit?: string;
   months: string[];
@@ -55,10 +61,10 @@ function isMonthInRange(month: number, filters: BudgetFiltersState) {
 
 function rowMatchesFilters(row: BudgetRow, filters: BudgetFiltersState) {
   const matchesGroup =
-    !filters.businessGroup || row.businessGroup === filters.businessGroup;
+    filters.businessGroupId == null || row.businessGroupId === filters.businessGroupId;
   const matchesUnit =
-    filters.businessUnits.length === 0 ||
-    (row.businessUnit != null && filters.businessUnits.includes(row.businessUnit));
+    filters.businessUnitIds.length === 0 ||
+    (row.businessUnitId != null && filters.businessUnitIds.includes(row.businessUnitId));
 
   return matchesGroup && matchesUnit;
 }
@@ -85,6 +91,7 @@ export function getFilteredData(
 export function getChanges(
   originalRows: BudgetRow[],
   currentRows: BudgetRow[],
+  userType: 'gestor' | 'financeiro',
 ): ChangeItem[] {
   const originalById = new Map<string, BudgetRow>();
 
@@ -106,19 +113,36 @@ export function getChanges(
       const months = Object.entries(row.monthlyData)
         .map(([monthKey, monthData]) => {
           const month = Number(monthKey);
-          const previousValue = originalRow.monthlyData[month]?.proposta ?? 0;
-          const isChanged = monthData.proposta !== previousValue;
 
-          if (!isChanged || monthData.changeType === 'reset') {
-            return null;
+          if (userType === 'gestor') {
+            const previousValue = originalRow.monthlyData[month]?.proposta ?? 0;
+            const isChanged = monthData.proposta !== previousValue;
+
+            if (!isChanged || monthData.changeType === 'reset') {
+              return null;
+            }
+
+            return {
+              month,
+              monthLabel: monthNames[month - 1],
+              previousValue,
+              nextValue: monthData.proposta,
+            };
+          } else {
+            const previousValue = originalRow.monthlyData[month]?.orcamento ?? 0;
+            const isChanged = monthData.orcamento !== previousValue;
+
+            if (!isChanged) {
+              return null;
+            }
+
+            return {
+              month,
+              monthLabel: monthNames[month - 1],
+              previousValue,
+              nextValue: monthData.orcamento,
+            };
           }
-
-          return {
-            month,
-            monthLabel: monthNames[month - 1],
-            previousValue,
-            nextValue: monthData.proposta,
-          };
         })
         .filter((item): item is ChangeMonthItem => item !== null);
 
@@ -128,6 +152,8 @@ export function getChanges(
           dfc: row.dfc,
           conta: row.conta,
           subconta: row.subconta,
+          businessGroupId: row.businessGroupId,
+          businessUnitId: row.businessUnitId,
           businessGroup: row.businessGroup,
           businessUnit: row.businessUnit,
           months,
@@ -176,6 +202,8 @@ export function getPendencias(
         dfc: row.dfc,
         conta: row.conta,
         subconta: row.subconta,
+        businessGroupId: row.businessGroupId,
+        businessUnitId: row.businessUnitId,
         businessGroup: row.businessGroup,
         businessUnit: row.businessUnit,
         months,
@@ -206,11 +234,11 @@ export function getVisibleChanges(
     })
     .filter((change) => {
       const matchesGroup =
-        !filters.businessGroup || change.businessGroup === filters.businessGroup;
+        filters.businessGroupId == null || change.businessGroupId === filters.businessGroupId;
       const matchesUnit =
-        filters.businessUnits.length === 0 ||
-        (change.businessUnit != null &&
-          filters.businessUnits.includes(change.businessUnit));
+        filters.businessUnitIds.length === 0 ||
+        (change.businessUnitId != null &&
+          filters.businessUnitIds.includes(change.businessUnitId));
 
       return matchesGroup && matchesUnit && change.months.length > 0;
     });
