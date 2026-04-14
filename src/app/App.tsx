@@ -447,35 +447,6 @@ export default function App() {
     loadCatalog();
   }, []);
 
-  const mergeInto = (target: BudgetRow[], source: BudgetRow[]): void => {
-    const sourceById = new Map<string, BudgetRow>();
-    const buildMap = (rows: BudgetRow[]) => {
-      rows.forEach(row => {
-        sourceById.set(row.id, row);
-        if (row.children) buildMap(row.children);
-      });
-    };
-    buildMap(source);
-
-    const mergeRow = (targetRow: BudgetRow): void => {
-      const sourceRow = sourceById.get(targetRow.id);
-      if (sourceRow) {
-        for (let month = 1; month <= 12; month++) {
-          const t = targetRow.monthlyData[month];
-          const s = sourceRow.monthlyData[month];
-          if (t && s) {
-            t.anterior += s.anterior;
-            t.proposta += s.proposta;
-            t.orcamento += s.orcamento;
-          }
-        }
-      }
-      targetRow.children?.forEach(mergeRow);
-    };
-
-    target.forEach(mergeRow);
-  };
-
   const handleSearch = async (
     currentFilters: BudgetFiltersState,
     options?: { tipoorcamento?: 'S' },
@@ -506,17 +477,19 @@ export default function App() {
 
         setBudgetDataByUnit(unitDataMap);
 
-        // Consolidado = soma de todas as unidades
-        const allUnitData = Object.values(unitDataMap);
-        if (allUnitData.length > 0) {
-          const consolidated = deepClone(allUnitData[0]);
-          for (let i = 1; i < allUnitData.length; i++) {
-            mergeInto(consolidated, allUnitData[i]);
-          }
-          setBudgetData(consolidated);
-          setCatalogData((prev) => prev.length === 0 ? createSnapshot(consolidated) : prev);
-          setOriginalDataSnapshot(createSnapshot(consolidated));
-        }
+        // Consolidado = busca sem filtro de unidade
+        const consolidadoApiData = await getBudget({
+          anoorcamento: 2026,
+          ...(options?.tipoorcamento && {
+            tipoorcamento: options.tipoorcamento,
+          }),
+        });
+        const consolidadoAdapted = budgetAdapter(consolidadoApiData, options?.tipoorcamento);
+        const consolidadoFiltered = getFilteredData(consolidadoAdapted, currentFilters);
+        const consolidated = deepClone(consolidadoFiltered);
+        setBudgetData(consolidated);
+        setCatalogData((prev) => prev.length === 0 ? createSnapshot(consolidated) : prev);
+        setOriginalDataSnapshot(createSnapshot(consolidated));
       } else {
         const idunidade =
           currentFilters.businessUnitIds.length === 1
