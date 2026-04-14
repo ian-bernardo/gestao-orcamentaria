@@ -10,6 +10,7 @@ interface BudgetApiItem {
   MES?: string;
   VALORANOANTERIOR?: number;
   PROPOSTA?: number;
+  CONTRAPROPOSTA?: number;
   ORCADO?: number;
   GRUPONEGOCIO?: string;
   UNIDADENEGOCIO?: string;
@@ -195,8 +196,8 @@ function getSubcontaNode(
 
 function accumulateValue(target: MonthlyData, source: BudgetApiItem): MonthlyData {
   return {
-    anterior: target.anterior + (source.VALORANOANTERIOR ?? 0),
-    proposta: target.proposta + (source.PROPOSTA ?? 0),
+    anterior: target.anterior + (source.PROPOSTA ?? 0),
+    proposta: target.proposta + (source.CONTRAPROPOSTA ?? 0),
     orcamento: target.orcamento + (source.ORCADO ?? 0),
     changeType: null,
   };

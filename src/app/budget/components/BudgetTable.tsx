@@ -84,7 +84,17 @@ function getZeroPropostaCount(
   startMonth: number,
   endMonth: number,
   userType: "gestor" | "financeiro",
+  isSintetico?: boolean,
 ): number {
+  if (isSintetico) {
+    const hasZero = Object.entries(row.monthlyData).some(([monthKey, monthData]) => {
+      const month = Number(monthKey);
+      return isMonthVisible(month, startMonth, endMonth) &&
+        isPendingForUserType(monthData, userType);
+    });
+    return hasZero ? 1 : 0;
+  }
+
   let count = 0;
 
   const visit = (current: BudgetRow) => {
@@ -117,8 +127,20 @@ function getZeroPropostaMonths(
   startMonth: number,
   endMonth: number,
   userType: "gestor" | "financeiro",
+  isSintetico?: boolean,
 ): number[] {
   const months = new Set<number>();
+
+  if (isSintetico) {
+    Object.entries(row.monthlyData).forEach(([monthKey, monthData]) => {
+      const month = Number(monthKey);
+      if (isMonthVisible(month, startMonth, endMonth) &&
+        isPendingForUserType(monthData, userType)) {
+        months.add(month);
+      }
+    });
+    return Array.from(months).sort((a, b) => a - b);
+  }
 
   const visit = (current: BudgetRow) => {
     if (current.level === "subconta") {
@@ -461,10 +483,10 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
     >();
 
     const visit = (row: BudgetRow) => {
-      if (row.level === "dfc" && row.children?.length) {
+      if (row.level === "dfc" && (row.children?.length || isSintetico)) {
         map.set(row.id, {
-          count: getZeroPropostaCount(row, startMonth, endMonth, userType),
-          months: getZeroPropostaMonths(row, startMonth, endMonth, userType),
+          count: getZeroPropostaCount(row, startMonth, endMonth, userType, isSintetico),
+          months: getZeroPropostaMonths(row, startMonth, endMonth, userType, isSintetico),
         });
       }
 

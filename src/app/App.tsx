@@ -553,7 +553,10 @@ export default function App() {
   );
 
   const pendencias = useMemo(
-    () => getPendencias(filteredData, filters, userType, classificacao),
+    () => {
+        console.log('filteredData length:', filteredData.length, 'classificacao:', classificacao);
+        return getPendencias(filteredData, filters, userType, classificacao);
+    },
     [filteredData, filters, userType, classificacao],
   );
 
@@ -694,28 +697,7 @@ export default function App() {
 
   useEffect(() => {
     if (userType === 'gestor') {
-      setLastFinanceiroFilters(filters);
-      const gestorGroup = allGroups.find(
-        (group) => group.label === GESTOR_FIXED_GROUP_LABEL,
-      );
-
-      const nextGestorFilters: BudgetFiltersState = {
-        ...GESTOR_FIXED_FILTERS,
-        businessGroupId: gestorGroup?.value,
-        businessGroup: gestorGroup?.label ?? GESTOR_FIXED_GROUP_LABEL,
-      };
-
-      setFilters((prev) => {
-        const unchanged =
-          prev.businessGroupId === nextGestorFilters.businessGroupId &&
-          numberArrayEquals(prev.businessUnitIds, nextGestorFilters.businessUnitIds) &&
-          prev.businessGroup === nextGestorFilters.businessGroup &&
-          stringArrayEquals(prev.businessUnits, nextGestorFilters.businessUnits) &&
-          prev.startMonth === nextGestorFilters.startMonth &&
-          prev.endMonth === nextGestorFilters.endMonth;
-
-        return unchanged ? prev : nextGestorFilters;
-      });
+      // Filtros do gestor vêm sempre pela URL — não sobrescrever
       return;
     }
 

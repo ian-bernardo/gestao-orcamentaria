@@ -59,12 +59,23 @@ function isMonthInRange(month: number, filters: BudgetFiltersState) {
   return month >= filters.startMonth && month <= filters.endMonth;
 }
 
-function rowMatchesFilters(row: BudgetRow, filters: BudgetFiltersState) {
+function rowMatchesFilters(
+  row: BudgetRow,
+  filters: BudgetFiltersState,
+  classificacao?: 'A' | 'S',
+) {
   const matchesGroup =
-    filters.businessGroupId == null || row.businessGroupId === filters.businessGroupId;
+    filters.businessGroupId == null ||
+    row.businessGroupId === filters.businessGroupId;
+
+  if (classificacao === 'S' && row.level === 'dfc') {
+    return matchesGroup;
+  }
+
   const matchesUnit =
     filters.businessUnitIds.length === 0 ||
-    (row.businessUnitId != null && filters.businessUnitIds.includes(row.businessUnitId));
+    (row.businessUnitId != null &&
+      filters.businessUnitIds.includes(row.businessUnitId));
 
   return matchesGroup && matchesUnit;
 }
@@ -150,6 +161,8 @@ export function getChanges(
         })
         .filter((item): item is ChangeMonthItem => item !== null);
 
+        
+
       if (isActionableRow(row, classificacao) && months.length > 0) {
         changes.push({
           rowId: row.id,
@@ -187,7 +200,7 @@ export function getPendencias(
 
         if (
           !isMonthInRange(month, filters) ||
-          !rowMatchesFilters(row, filters) ||
+          !rowMatchesFilters(row, filters, classificacao) ||
           (userType === 'gestor'
             ? monthData.proposta !== 0
             : monthData.orcamento !== 0)
@@ -201,6 +214,7 @@ export function getPendencias(
         (month): month is (typeof monthNames)[number] => month !== null,
       );
 
+      console.log('row:', row.id, 'editable:', row.editable, 'level:', row.level, 'businessUnitId:', row.businessUnitId, 'matchesFilters:', rowMatchesFilters(row, filters));
     if (isActionableRow(row, classificacao) && months.length > 0) {
       pendencias.push({
         rowId: row.id,
