@@ -18,8 +18,10 @@ import {
 interface BudgetFiltersProps {
   filters: {
     businessGroupId?: number;
+    businessGroupIds: number[];
     businessUnitIds: number[];
     businessGroup: string;
+    businessGroups: string[];
     businessUnits: string[];
     startMonth: number;
     endMonth: number;
@@ -51,6 +53,23 @@ const months = [
   { value: 11, label: 'Novembro' },
   { value: 12, label: 'Dezembro' },
 ];
+
+function getGroupsLabel(
+  selectedGroupIds: number[],
+  allGroups: { label: string; value: number }[]
+) {
+  if (!selectedGroupIds || selectedGroupIds.length === 0) {
+    return 'Todos os grupos';
+  }
+
+  const selected = allGroups.filter((g) => selectedGroupIds.includes(g.value));
+
+  if (selected.length === 1) {
+    return selected[0].label;
+  }
+
+  return `${selected.length} grupos selecionados`;
+}
 
 function getUnitsLabel(
   selectedUnitIds: number[],
@@ -85,50 +104,78 @@ export function BudgetFilters({
   classificacao,
   onClassificacaoChange,
 }: BudgetFiltersProps) {
-  const selectedUnitsLabel = getUnitsLabel(
-  filters.businessUnitIds,
-  availableUnits
-);
+  const selectedGroupsLabel = getGroupsLabel(filters.businessGroupIds, allGroups);
+  const selectedUnitsLabel = getUnitsLabel(filters.businessUnitIds, availableUnits);
+
+  const toggleGroup = (group: { label: string; value: number }) => {
+    const isSelected = filters.businessGroupIds.includes(group.value);
+    const nextGroupIds = isSelected
+      ? filters.businessGroupIds.filter((id) => id !== group.value)
+      : [...filters.businessGroupIds, group.value];
+    onFilterChange('businessGroupIds', nextGroupIds);
+  };
 
   const toggleUnit = (unit: { label: string; value: number }) => {
-  const isSelected = filters.businessUnitIds.includes(unit.value);
-
-  const nextUnitIds = isSelected
-    ? filters.businessUnitIds.filter((id) => id !== unit.value)
-    : [...filters.businessUnitIds, unit.value];
-
-  onFilterChange('businessUnitIds', nextUnitIds);
-};
+    const isSelected = filters.businessUnitIds.includes(unit.value);
+    const nextUnitIds = isSelected
+      ? filters.businessUnitIds.filter((id) => id !== unit.value)
+      : [...filters.businessUnitIds, unit.value];
+    onFilterChange('businessUnitIds', nextUnitIds);
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <div className="grid grid-cols-4 gap-6 mb-6">
         <div className="space-y-2">
-          <Label htmlFor="businessGroup" className="text-sm font-medium text-gray-700">
+          <Label className="text-sm font-medium text-gray-700">
             Grupo de Negócio
           </Label>
-          <Select
-            value={filters.businessGroupId?.toString() || ''}
-            onValueChange={(value) =>
-              onFilterChange(
-                'businessGroupId',
-                value === '__all__' ? undefined : Number(value),
-              )
-            }
-            disabled={isReadOnly}
-          >
-            <SelectTrigger id="businessGroup" className="w-full">
-              <SelectValue placeholder="Todos os grupos" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Todos os grupos</SelectItem>
-              {allGroups.map((group) => (
-                <SelectItem key={group.value} value={group.value.toString()}>
-                  {group.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                disabled={isReadOnly}
+                className="border-input data-[placeholder]:text-muted-foreground flex w-full items-center justify-between gap-2 rounded-md border bg-input-background px-3 py-2 text-sm whitespace-nowrap ring-offset-background transition-[color,box-shadow] outline-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 h-9"
+              >
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {selectedGroupsLabel}
+                </span>
+                <ChevronDown className="size-4 shrink-0 opacity-50" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-[var(--radix-popover-trigger-width)] p-0"
+            >
+              <div className="border-b border-slate-100 px-3 py-2">
+                <div className="text-sm font-medium text-slate-900">
+                  Selecione os grupos
+                </div>
+                <div className="text-xs text-slate-500">
+                  Nenhum selecionado = todos os grupos
+                </div>
+              </div>
+              <div className="max-h-64 space-y-2 overflow-y-auto px-3 py-3">
+                {allGroups.length === 0 ? (
+                  <div className="text-sm text-slate-400">Nenhum grupo disponível</div>
+                ) : (
+                  allGroups.map((group) => (
+                    <label
+                      key={group.value}
+                      className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      <Checkbox
+                        checked={filters.businessGroupIds.includes(group.value)}
+                        onCheckedChange={() => toggleGroup(group)}
+                        disabled={isReadOnly}
+                      />
+                      <span className="truncate">{group.label}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div className="space-y-2">

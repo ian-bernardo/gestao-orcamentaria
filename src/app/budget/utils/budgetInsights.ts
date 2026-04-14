@@ -17,8 +17,10 @@ const monthNames = [
 
 export interface BudgetFiltersState {
   businessGroupId?: number;
+  businessGroupIds: number[];
   businessUnitIds: number[];
   businessGroup: string;
+  businessGroups: string[];
   businessUnits: string[];
   startMonth: number;
   endMonth: number;
@@ -65,8 +67,9 @@ function rowMatchesFilters(
   classificacao?: 'A' | 'S',
 ) {
   const matchesGroup =
-    filters.businessGroupId == null ||
-    row.businessGroupId === filters.businessGroupId;
+    filters.businessGroupIds.length === 0 ||
+    (row.businessGroupId != null &&
+      filters.businessGroupIds.includes(row.businessGroupId));
 
   if (classificacao === 'S' && row.level === 'dfc') {
     return matchesGroup;
@@ -89,9 +92,42 @@ function isActionableRow(row: BudgetRow, classificacao?: 'A' | 'S') {
 
 export function getFilteredData(
   rows: BudgetRow[],
-  _filters: BudgetFiltersState,
+  filters: BudgetFiltersState,
 ): BudgetRow[] {
+  const hasGroupFilter = filters.businessGroupIds.length > 0;
+  const hasUnitFilter = filters.businessUnitIds.length > 0;
+  console.log('getFilteredData - businessGroupIds:', filters.businessGroupIds, 'businessUnitIds:', filters.businessUnitIds);
+
   const visit = (row: BudgetRow): BudgetRow => {
+    if (row.level === 'subconta') {
+      const matchesGroup =
+        !hasGroupFilter ||
+        (row.businessGroupId != null &&
+          filters.businessGroupIds.includes(row.businessGroupId));
+      const matchesUnit =
+        !hasUnitFilter ||
+        (row.businessUnitId != null &&
+          filters.businessUnitIds.includes(row.businessUnitId));
+
+      if (!matchesGroup || !matchesUnit) {
+        // Zerar valores da subconta que não pertence aos filtros
+        return {
+          ...row,
+          monthlyData: Object.fromEntries(
+            Object.entries(row.monthlyData).map(([month, monthData]) => [
+              month,
+              {
+                ...monthData,
+                proposta: 0,
+                orcamento: 0,
+                anterior: 0,
+              },
+            ]),
+          ) as BudgetRow['monthlyData'],
+        };
+      }
+    }
+
     return {
       ...row,
       monthlyData: { ...row.monthlyData },
@@ -253,7 +289,9 @@ export function getVisibleChanges(
     })
     .filter((change) => {
       const matchesGroup =
-        filters.businessGroupId == null || change.businessGroupId === filters.businessGroupId;
+        filters.businessGroupIds.length === 0 ||
+        (change.businessGroupId != null &&
+          filters.businessGroupIds.includes(change.businessGroupId));
       const matchesUnit =
         filters.businessUnitIds.length === 0 ||
         (change.businessUnitId != null &&

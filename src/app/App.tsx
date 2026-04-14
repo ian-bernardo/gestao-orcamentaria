@@ -42,8 +42,10 @@ interface SelectOption {
 const GESTOR_FIXED_GROUP_LABEL = 'Grupo Norte';
 const GESTOR_FIXED_FILTERS: BudgetFiltersState = {
   businessGroupId: undefined,
+  businessGroupIds: [],
   businessUnitIds: [],
   businessGroup: GESTOR_FIXED_GROUP_LABEL,
+  businessGroups: [],
   businessUnits: [],
   startMonth: 4,
   endMonth: 5,
@@ -145,13 +147,16 @@ export default function App() {
   );
   const [filters, setFilters] = useState<BudgetFiltersState>({
     businessGroupId: undefined,
+    businessGroupIds: [],
     businessUnitIds: [],
     businessGroup: '',
+    businessGroups: [],
     businessUnits: [],
     startMonth: 1,
     endMonth: 12,
   });
   const [budgetData, setBudgetData] = useState<BudgetRow[]>([]);
+  const [budgetDataByUnit, setBudgetDataByUnit] = useState<Record<number, BudgetRow[]>>({});
   const [catalogData, setCatalogData] = useState<BudgetRow[]>([]);
   const [catalogDataSintetico, setCatalogDataSintetico] = useState<BudgetRow[]>([]);
   const [savedData, setSavedData] = useState<SavedBudgetEntry[]>([]);
@@ -280,9 +285,10 @@ export default function App() {
 
   const hydrateRowsForUnit = (
     rows: BudgetRow[],
-    businessGroupId?: number,
+    businessGroupIds: number[],
     businessUnitId?: number,
   ): BudgetRow[] => {
+    console.log('hydrateRowsForUnit - businessUnitId:', businessUnitId, 'businessGroupIds:', businessGroupIds);
     const visit = (row: BudgetRow): BudgetRow => {
       const children = row.children?.map(visit);
 
@@ -294,10 +300,14 @@ export default function App() {
       }
 
       const matchesGroup =
-        businessGroupId == null || row.businessGroupId === businessGroupId;
+        businessGroupIds.length === 0 ||
+        (row.businessGroupId != null &&
+          businessGroupIds.includes(row.businessGroupId));
       const matchesUnit =
         businessUnitId == null || row.businessUnitId === businessUnitId;
       const shouldKeepValues = matchesGroup && matchesUnit;
+
+      console.log('subconta:', row.id, 'businessUnitId:', row.businessUnitId, 'businessGroupId:', row.businessGroupId, 'matchesGroup:', matchesGroup, 'matchesUnit:', matchesUnit, 'shouldKeepValues:', shouldKeepValues, 'proposta jan:', row.monthlyData?.[1]?.proposta);
 
       return {
         ...row,
@@ -318,14 +328,20 @@ export default function App() {
   };
 
   const groupByUnit = (
-    rows: BudgetRow[],
-    units: SelectOption[],
-    businessGroupId?: number,
-  ) =>
-    units.reduce<Record<number, BudgetRow[]>>((acc, unit) => {
-      acc[unit.value] = hydrateRowsForUnit(rows, businessGroupId, unit.value);
-      return acc;
-    }, {} as Record<number, BudgetRow[]>);
+  rows: BudgetRow[],
+  units: SelectOption[],
+  businessGroupIds: number[],
+) =>
+  units.reduce<Record<number, BudgetRow[]>>((acc, unit) => {
+    const hydrated = hydrateRowsForUnit(rows, businessGroupIds, unit.value);
+    const custoRow = hydrated.find(r => r.id === 'custo' || r.dfc === 'Custo');
+    const primeiraConta = custoRow?.children?.[0];
+    const primeiraSubconta = primeiraConta?.children?.[0];
+    console.log('unit:', unit.label, 'unitId:', unit.value, 'businessGroupIds:', businessGroupIds);
+    console.log('primeiraSubconta:', primeiraSubconta?.id, 'unitId:', primeiraSubconta?.businessUnitId, 'jan proposta:', primeiraSubconta?.monthlyData?.[1]?.proposta);
+    acc[unit.value] = hydrated;
+    return acc;
+  }, {} as Record<number, BudgetRow[]>);
 
   const resetPropostasForGestor = (rows: BudgetRow[]): BudgetRow[] =>
     rows.map((row) => ({
@@ -362,9 +378,11 @@ export default function App() {
 
     setClassificacao(nextClassificacao);
 
+    const nextGroupIds = nextGroupId != null ? [nextGroupId] : [];
+
     setFilters((prev) => {
       const unchanged =
-        prev.businessGroupId === nextGroupId &&
+        numberArrayEquals(prev.businessGroupIds, nextGroupIds) &&
         numberArrayEquals(prev.businessUnitIds, nextUnitIds) &&
         prev.startMonth === nextStartMonth &&
         prev.endMonth === nextEndMonth &&
@@ -378,8 +396,10 @@ export default function App() {
       return {
         ...prev,
         businessGroupId: nextGroupId,
+        businessGroupIds: nextGroupIds,
         businessUnitIds: nextUnitIds,
         businessGroup: '',
+        businessGroups: [],
         businessUnits: [],
         startMonth: nextStartMonth,
         endMonth: nextEndMonth,
@@ -394,8 +414,10 @@ export default function App() {
       void handleSearch(
         {
           businessGroupId: nextGroupId,
+          businessGroupIds: nextGroupIds,
           businessUnitIds: nextUnitIds,
           businessGroup: '',
+          businessGroups: [],
           businessUnits: [],
           startMonth: nextStartMonth,
           endMonth: nextEndMonth,
@@ -425,6 +447,35 @@ export default function App() {
     loadCatalog();
   }, []);
 
+  const mergeInto = (target: BudgetRow[], source: BudgetRow[]): void => {
+    const sourceById = new Map<string, BudgetRow>();
+    const buildMap = (rows: BudgetRow[]) => {
+      rows.forEach(row => {
+        sourceById.set(row.id, row);
+        if (row.children) buildMap(row.children);
+      });
+    };
+    buildMap(source);
+
+    const mergeRow = (targetRow: BudgetRow): void => {
+      const sourceRow = sourceById.get(targetRow.id);
+      if (sourceRow) {
+        for (let month = 1; month <= 12; month++) {
+          const t = targetRow.monthlyData[month];
+          const s = sourceRow.monthlyData[month];
+          if (t && s) {
+            t.anterior += s.anterior;
+            t.proposta += s.proposta;
+            t.orcamento += s.orcamento;
+          }
+        }
+      }
+      targetRow.children?.forEach(mergeRow);
+    };
+
+    target.forEach(mergeRow);
+  };
+
   const handleSearch = async (
     currentFilters: BudgetFiltersState,
     options?: { tipoorcamento?: 'S' },
@@ -433,29 +484,67 @@ export default function App() {
       setIsLoading(true);
       setLoadError('');
 
-      const idunidade =
-        currentFilters.businessUnitIds.length === 1
-          ? currentFilters.businessUnitIds[0]
-          : undefined;
+      const hasMultipleUnits = currentFilters.businessUnitIds.length > 1;
 
-      const apiData = await getBudget({
-        anoorcamento: 2026,
-        idgrupo: currentFilters.businessGroupId,
-        idunidade,
-        ...(options?.tipoorcamento && {
-          tipoorcamento: options.tipoorcamento,
-        }),
-      });
+      if (hasMultipleUnits) {
+        // Buscar dados individualmente por unidade
+        const unitDataMap: Record<number, BudgetRow[]> = {};
 
-      const adapted = budgetAdapter(apiData, options?.tipoorcamento);
-      const data = deepClone(adapted);
+        await Promise.all(
+          currentFilters.businessUnitIds.map(async (unitId) => {
+            const unitApiData = await getBudget({
+              anoorcamento: 2026,
+              idunidade: unitId,
+              ...(options?.tipoorcamento && {
+                tipoorcamento: options.tipoorcamento,
+              }),
+            });
+            const unitAdapted = budgetAdapter(unitApiData, options?.tipoorcamento);
+            unitDataMap[unitId] = deepClone(unitAdapted);
+          })
+        );
 
-      setBudgetData(data);
-      // Atualizar catálogo apenas se ainda não foi carregado
-      setCatalogData((prev) =>
-        prev.length === 0 ? createSnapshot(data) : prev
-      );
-      setOriginalDataSnapshot(createSnapshot(data));
+        setBudgetDataByUnit(unitDataMap);
+
+        // Consolidado = soma de todas as unidades
+        const allUnitData = Object.values(unitDataMap);
+        if (allUnitData.length > 0) {
+          const consolidated = deepClone(allUnitData[0]);
+          for (let i = 1; i < allUnitData.length; i++) {
+            mergeInto(consolidated, allUnitData[i]);
+          }
+          setBudgetData(consolidated);
+          setCatalogData((prev) => prev.length === 0 ? createSnapshot(consolidated) : prev);
+          setOriginalDataSnapshot(createSnapshot(consolidated));
+        }
+      } else {
+        const idunidade =
+          currentFilters.businessUnitIds.length === 1
+            ? currentFilters.businessUnitIds[0]
+            : undefined;
+
+        const idgrupo =
+          currentFilters.businessGroupIds.length === 1
+            ? currentFilters.businessGroupIds[0]
+            : undefined;
+
+        const apiData = await getBudget({
+          anoorcamento: 2026,
+          idgrupo,
+          idunidade,
+          ...(options?.tipoorcamento && {
+            tipoorcamento: options.tipoorcamento,
+          }),
+        });
+
+        const adapted = budgetAdapter(apiData, options?.tipoorcamento);
+        const data = deepClone(adapted);
+
+        setBudgetData(data);
+        setBudgetDataByUnit({});
+        setCatalogData((prev) => prev.length === 0 ? createSnapshot(data) : prev);
+        setOriginalDataSnapshot(createSnapshot(data));
+      }
     } catch (error) {
       console.error('Erro ao buscar dados:', error);
       setLoadError('Erro ao buscar dados da API');
@@ -469,7 +558,7 @@ export default function App() {
     [filters.businessUnitIds],
   );
 
-  const filtersSearchKey = `${filters.businessGroupId ?? 'all'}|${normalizedUnitIdsKey}|${filters.startMonth}|${filters.endMonth}`;
+  const filtersSearchKey = `${filters.businessGroupIds.join(',') || 'all'}|${normalizedUnitIdsKey}|${filters.startMonth}|${filters.endMonth}`;
 
   useEffect(() => {
     if (isFirstRenderRef.current) {
@@ -477,6 +566,7 @@ export default function App() {
       return;
     }
     setBudgetData([]);
+    setBudgetDataByUnit({});
     setOriginalDataSnapshot([]);
   }, [filtersSearchKey]);
 
@@ -494,24 +584,25 @@ export default function App() {
 
   useEffect(() => {
     setFilters((prev) => {
-      const nextGroupLabel =
-        prev.businessGroupId == null
-          ? ''
-          : allGroups.find((group) => group.value === prev.businessGroupId)?.label ?? '';
+      const nextGroupLabels = allGroups
+        .filter((group) => prev.businessGroupIds.includes(group.value))
+        .map((group) => group.label);
+      const nextGroupLabel = nextGroupLabels[0] ?? '';
       const nextUnitLabels = allUnits
         .filter((unit) => prev.businessUnitIds.includes(unit.value))
         .map((unit) => unit.label);
 
-      const groupUnchanged = prev.businessGroup === nextGroupLabel;
+      const groupsUnchanged = stringArrayEquals(prev.businessGroups, nextGroupLabels);
       const unitsUnchanged = stringArrayEquals(prev.businessUnits, nextUnitLabels);
 
-      if (groupUnchanged && unitsUnchanged) {
+      if (groupsUnchanged && unitsUnchanged) {
         return prev;
       }
 
       return {
         ...prev,
         businessGroup: nextGroupLabel,
+        businessGroups: nextGroupLabels,
         businessUnits: nextUnitLabels,
       };
     });
@@ -523,11 +614,25 @@ export default function App() {
   );
 
   const isGestor = userType === 'gestor';
-  const isAllGroups = filters.businessGroupId == null;
-  const availableUnits = useMemo(
-    () => getAvailableUnitsForGroup(activeCatalog, filters.businessGroupId),
-    [activeCatalog, filters.businessGroupId],
-  );
+  const isAllGroups = filters.businessGroupIds.length === 0;
+  const availableUnits = useMemo(() => {
+    if (filters.businessGroupIds.length === 0) {
+      return getAvailableUnitsForGroup(activeCatalog, undefined);
+    }
+    if (filters.businessGroupIds.length === 1) {
+      return getAvailableUnitsForGroup(activeCatalog, filters.businessGroupIds[0]);
+    }
+    // Múltiplos grupos — unir unidades de cada grupo sem duplicatas
+    const unitMap = new Map<number, string>();
+    filters.businessGroupIds.forEach((groupId) => {
+      getAvailableUnitsForGroup(activeCatalog, groupId).forEach((unit) => {
+        unitMap.set(unit.value, unit.label);
+      });
+    });
+    return Array.from(unitMap.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [activeCatalog, filters.businessGroupIds]);
 
   const selectedUnits = useMemo(() => {
     if (filters.businessUnitIds.length > 0) {
@@ -539,10 +644,17 @@ export default function App() {
     return availableUnits;
   }, [availableUnits, filters.businessUnitIds]);
 
-  const groupedDataByUnit = useMemo(
-    () => groupByUnit(filteredData, selectedUnits, filters.businessGroupId),
-    [filteredData, selectedUnits, filters.businessGroupId],
-  );
+  const groupedDataByUnit = useMemo(() => {
+    if (Object.keys(budgetDataByUnit).length > 0) {
+      // Dados já separados por unidade — usar diretamente
+      return Object.fromEntries(
+        selectedUnits
+          .filter(unit => budgetDataByUnit[unit.value])
+          .map(unit => [unit.value, budgetDataByUnit[unit.value]])
+      );
+    }
+    return groupByUnit(budgetData, selectedUnits, filters.businessGroupIds);
+  }, [budgetData, budgetDataByUnit, selectedUnits, filters.businessGroupIds]);
 
   const shouldSplitByUnit =
     userType === 'financeiro' && viewMode === 'por_unidade';
@@ -584,25 +696,25 @@ export default function App() {
     }
 
     setFilters((prev) => {
-      if (key === 'businessGroupId') {
-        const groupId = typeof value === 'number' ? value : undefined;
-        const group =
-          groupId == null ? undefined : allGroups.find((g) => g.value === groupId);
+      if (key === 'businessGroupIds') {
+        const groupIds = Array.isArray(value) ? (value as number[]) : [];
+        const groupLabels = allGroups
+          .filter((g) => groupIds.includes(g.value))
+          .map((g) => g.label);
 
-        const unchanged =
-          prev.businessGroupId === groupId &&
-          prev.businessGroup === (group?.label ?? '') &&
-          prev.businessUnitIds.length === 0 &&
-          prev.businessUnits.length === 0;
-
-        if (unchanged) {
+        if (
+          numberArrayEquals(prev.businessGroupIds, groupIds) &&
+          stringArrayEquals(prev.businessGroups, groupLabels)
+        ) {
           return prev;
         }
 
         return {
           ...prev,
-          businessGroupId: groupId,
-          businessGroup: group?.label ?? '',
+          businessGroupId: groupIds.length === 1 ? groupIds[0] : undefined,
+          businessGroupIds: groupIds,
+          businessGroup: groupLabels[0] ?? '',
+          businessGroups: groupLabels,
           businessUnitIds: [],
           businessUnits: [],
         };
@@ -681,15 +793,17 @@ export default function App() {
     setFilters((prev) => {
       const nextFilters: BudgetFiltersState = {
         businessGroupId: undefined,
+        businessGroupIds: [],
         businessUnitIds: [],
         businessGroup: '',
+        businessGroups: [],
         businessUnits: [],
         startMonth: 1,
         endMonth: 12,
       };
 
       const unchanged =
-        prev.businessGroupId == null &&
+        prev.businessGroupIds.length === 0 &&
         prev.businessUnitIds.length === 0 &&
         prev.businessGroup === '' &&
         prev.businessUnits.length === 0 &&
@@ -760,8 +874,8 @@ export default function App() {
     currentUserType: 'gestor' | 'financeiro',
   ) => {
     const params = new URLSearchParams();
-    if (currentFilters.businessGroupId != null) {
-      params.set('p_gn', String(currentFilters.businessGroupId));
+    if (currentFilters.businessGroupIds.length === 1) {
+      params.set('p_gn', String(currentFilters.businessGroupIds[0]));
     }
     if (currentFilters.businessUnitIds.length === 1) {
       params.set('p_un', String(currentFilters.businessUnitIds[0]));
@@ -776,27 +890,20 @@ export default function App() {
   };
 
   const handleClassificacaoChange = (nextClassificacao: 'A' | 'S') => {
-    setClassificacao(nextClassificacao);
-    setFilters((prev) => ({
-      ...prev,
+    const nextFilters = {
+      ...filters,
       businessGroupId: undefined,
+      businessGroupIds: [],
       businessUnitIds: [],
       businessGroup: '',
+      businessGroups: [],
       businessUnits: [],
-    }));
+    };
+    setClassificacao(nextClassificacao);
+    setFilters(nextFilters);
     setBudgetData([]);
     setOriginalDataSnapshot([]);
-    syncUrl(
-      {
-        ...filters,
-        businessGroupId: undefined,
-        businessUnitIds: [],
-        businessGroup: '',
-        businessUnits: [],
-      },
-      nextClassificacao,
-      userType,
-    );
+    syncUrl(nextFilters, nextClassificacao, userType);
   };
 
   const handleOpenSaveModal = () => setIsSaveModalOpen(true);
@@ -996,7 +1103,7 @@ export default function App() {
                       <h3 className="text-sm font-semibold text-slate-700">{unit.label}</h3>
                     </div>
                     <BudgetTable
-                      data={budgetData}
+                      data={groupedDataByUnit[unit.value] ?? filteredData}
                       visibleData={groupedDataByUnit[unit.value] ?? filteredData}
                       onDataChange={handleBudgetDataChange}
                       onBaselineChange={() => {}}
