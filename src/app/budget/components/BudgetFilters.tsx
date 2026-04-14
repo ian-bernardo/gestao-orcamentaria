@@ -33,6 +33,8 @@ interface BudgetFiltersProps {
   onClear: () => void;
   onSave: () => void;
   onSearch: () => void;
+  classificacao: 'A' | 'S';
+  onClassificacaoChange: (classificacao: 'A' | 'S') => void;
 }
 
 const months = [
@@ -80,6 +82,8 @@ export function BudgetFilters({
   onClear,
   onSave,
   onSearch,
+  classificacao,
+  onClassificacaoChange,
 }: BudgetFiltersProps) {
   const selectedUnitsLabel = getUnitsLabel(
   filters.businessUnitIds,
@@ -240,6 +244,31 @@ export function BudgetFilters({
               : 'Visualizar consolidado'}
           </Button>
         ) : null}
+
+        {!isReadOnly && (
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+            <button
+              onClick={() => onClassificacaoChange('A')}
+              className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
+                classificacao === 'A'
+                  ? 'bg-[#0066A1] text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              Analítico
+            </button>
+            <button
+              onClick={() => onClassificacaoChange('S')}
+              className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
+                classificacao === 'S'
+                  ? 'bg-[#0066A1] text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              Sintético
+            </button>
+          </div>
+        )}
 
         <div className="flex-1" />
 

@@ -153,6 +153,7 @@ export default function App() {
   });
   const [budgetData, setBudgetData] = useState<BudgetRow[]>([]);
   const [catalogData, setCatalogData] = useState<BudgetRow[]>([]);
+  const [catalogDataSintetico, setCatalogDataSintetico] = useState<BudgetRow[]>([]);
   const [savedData, setSavedData] = useState<SavedBudgetEntry[]>([]);
   const [originalDataSnapshot, setOriginalDataSnapshot] = useState<BudgetRow[]>(
     [],
@@ -408,12 +409,14 @@ export default function App() {
   useEffect(() => {
     const loadCatalog = async () => {
       try {
-        const apiData = await getBudget({
-          anoorcamento: 2026,
-        });
-        const adapted = budgetAdapter(apiData);
-        const snapshot = createSnapshot(adapted);
-        setCatalogData(snapshot);
+        const [apiDataAnalitico, apiDataSintetico] = await Promise.all([
+          getBudget({ anoorcamento: 2026 }),
+          getBudget({ anoorcamento: 2026, tipoorcamento: 'S' }),
+        ]);
+        const adaptedAnalitico = budgetAdapter(apiDataAnalitico);
+        const adaptedSintetico = budgetAdapter(apiDataSintetico, 'S');
+        setCatalogData(createSnapshot(adaptedAnalitico));
+        setCatalogDataSintetico(createSnapshot(adaptedSintetico));
       } catch (error) {
         console.error('Erro ao carregar catálogo:', error);
       }
@@ -477,14 +480,16 @@ export default function App() {
     setOriginalDataSnapshot([]);
   }, [filtersSearchKey]);
 
+  const activeCatalog = classificacao === 'S' ? catalogDataSintetico : catalogData;
+
   const allGroups = useMemo(
-    () => getAllGroupOptions(catalogData),
-    [catalogData],
+    () => getAllGroupOptions(activeCatalog),
+    [activeCatalog],
   );
 
   const allUnits = useMemo(
-    () => getAllUnitOptions(catalogData),
-    [catalogData],
+    () => getAllUnitOptions(activeCatalog),
+    [activeCatalog],
   );
 
   useEffect(() => {
@@ -520,8 +525,8 @@ export default function App() {
   const isGestor = userType === 'gestor';
   const isAllGroups = filters.businessGroupId == null;
   const availableUnits = useMemo(
-    () => getAvailableUnitsForGroup(catalogData, filters.businessGroupId),
-    [catalogData, filters.businessGroupId],
+    () => getAvailableUnitsForGroup(activeCatalog, filters.businessGroupId),
+    [activeCatalog, filters.businessGroupId],
   );
 
   const selectedUnits = useMemo(() => {
@@ -749,6 +754,51 @@ export default function App() {
     setBudgetData(nextData);
   };
 
+  const syncUrl = (
+    currentFilters: BudgetFiltersState,
+    currentClassificacao: 'A' | 'S',
+    currentUserType: 'gestor' | 'financeiro',
+  ) => {
+    const params = new URLSearchParams();
+    if (currentFilters.businessGroupId != null) {
+      params.set('p_gn', String(currentFilters.businessGroupId));
+    }
+    if (currentFilters.businessUnitIds.length === 1) {
+      params.set('p_un', String(currentFilters.businessUnitIds[0]));
+    }
+    params.set('p_permissao', currentUserType === 'financeiro' ? 'S' : 'N');
+    params.set('p_mes_inicial', String(currentFilters.startMonth));
+    params.set('p_mes_final', String(currentFilters.endMonth));
+    params.set('v_tipo', currentClassificacao);
+
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.pushState({}, '', newUrl);
+  };
+
+  const handleClassificacaoChange = (nextClassificacao: 'A' | 'S') => {
+    setClassificacao(nextClassificacao);
+    setFilters((prev) => ({
+      ...prev,
+      businessGroupId: undefined,
+      businessUnitIds: [],
+      businessGroup: '',
+      businessUnits: [],
+    }));
+    setBudgetData([]);
+    setOriginalDataSnapshot([]);
+    syncUrl(
+      {
+        ...filters,
+        businessGroupId: undefined,
+        businessUnitIds: [],
+        businessGroup: '',
+        businessUnits: [],
+      },
+      nextClassificacao,
+      userType,
+    );
+  };
+
   const handleOpenSaveModal = () => setIsSaveModalOpen(true);
   const handleCloseSaveModal = () => {
     setIsSaveModalOpen(false);
@@ -826,9 +876,14 @@ export default function App() {
           onFilterChange={handleFilterChange}
           onClear={handleClear}
           onSave={handleOpenSaveModal}
-          onSearch={() => void handleSearch(filters, {
-            tipoorcamento: classificacao === 'S' ? 'S' : undefined,
-          })}
+          onSearch={() => {
+            syncUrl(filters, classificacao, userType);
+            void handleSearch(filters, {
+              tipoorcamento: classificacao === 'S' ? 'S' : undefined,
+            });
+          }}
+          classificacao={classificacao}
+          onClassificacaoChange={handleClassificacaoChange}
         />
 
         <Dialog open={isSaveModalOpen} onOpenChange={setIsSaveModalOpen}>
