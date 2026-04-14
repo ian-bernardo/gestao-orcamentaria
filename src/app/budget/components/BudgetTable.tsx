@@ -441,10 +441,10 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
     });
 
     const receita = map.get("receita") ?? createEmptyMonthlyData();
-    const custo = map.get("dfc-Custo") ?? createEmptyMonthlyData();
-    const imposto = map.get("dfc-Imposto") ?? createEmptyMonthlyData();
-    const despesa = map.get("dfc-Despesa") ?? createEmptyMonthlyData();
-    const investimento = map.get("dfc-Investimento") ?? createEmptyMonthlyData();
+    const custo = map.get("custo") ?? map.get("dfc-Custo") ?? createEmptyMonthlyData();
+    const imposto = map.get("imposto") ?? map.get("dfc-Imposto") ?? createEmptyMonthlyData();
+    const despesa = map.get("despesa") ?? map.get("dfc-Despesa") ?? createEmptyMonthlyData();
+    const investimento = map.get("investimento") ?? map.get("dfc-Investimento") ?? createEmptyMonthlyData();
 
     const receitaMenosCusto = combineMonthlyData(receita, custo, -1);
 
@@ -474,6 +474,7 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
   }, [visibleData]);
 
   const zeroPropostaByGroup = useMemo(() => {
+    console.log('recalculando zeroPropostaByGroup');
     const map = new Map<
       string,
       {
@@ -483,10 +484,20 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
     >();
 
     const visit = (row: BudgetRow) => {
-      if (row.level === "dfc" && (row.children?.length || isSintetico)) {
+      const isSummary = highlightedRows.has(row.dfc);
+      if (row.level === "dfc" && !isSummary && (row.children?.length || isSintetico)) {
+        // No Sintético, usar computedDataById para refletir edições
+        const monthlyData = isSintetico
+          ? (computedDataById.get(row.id) ?? row.monthlyData)
+          : row.monthlyData;
+
+        const rowForCount = isSintetico
+          ? { ...row, monthlyData } as BudgetRow
+          : row;
+        console.log('row:', row.id, 'monthlyData jan proposta:', row.monthlyData[1]?.proposta, 'computed jan proposta:', monthlyData[1]?.proposta);
         map.set(row.id, {
-          count: getZeroPropostaCount(row, startMonth, endMonth, userType, isSintetico),
-          months: getZeroPropostaMonths(row, startMonth, endMonth, userType, isSintetico),
+          count: getZeroPropostaCount(rowForCount, startMonth, endMonth, userType, isSintetico),
+          months: getZeroPropostaMonths(rowForCount, startMonth, endMonth, userType, isSintetico),
         });
       }
 
@@ -495,7 +506,7 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
 
     visibleData.forEach(visit);
     return map;
-  }, [visibleData, startMonth, endMonth, userType]);
+  }, [visibleData, computedDataById, startMonth, endMonth, userType, isSintetico]);
 
   const getZeroPropostaCountForGroup = (groupId: string) =>
     zeroPropostaByGroup.get(groupId)?.count ?? 0;
@@ -869,7 +880,7 @@ export const BudgetTable = forwardRef<BudgetTableActions, BudgetTableProps>(func
         : "bg-white text-gray-900 border-r border-gray-200 p-0";
 
     const zeroPropostaCount =
-      row.level === "dfc" && row.children?.length
+      row.level === "dfc" && (row.children?.length || isSintetico)
         ? getZeroPropostaCountForGroup(row.id)
         : 0;
     const zeroPropostaMonths =
