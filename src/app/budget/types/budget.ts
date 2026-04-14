@@ -13,6 +13,8 @@ export interface MonthlyData {
 export interface BudgetRow {
   id: string;
   idGestao?: number;
+  businessGroupId?: number;
+  businessUnitId?: number;
   dfc: string;
   conta: string;
   subconta: string;
