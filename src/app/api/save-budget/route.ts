@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const SAVE_URL =
-  'https://homologacao.sistema.romancemoda.com.br/hml/romance/fin/gestaoorcam';
+const ORACLE_BASE_URL =
+  process.env.ORACLE_ENV === 'prod'
+    ? process.env.ORACLE_API_URL_PROD
+    : process.env.ORACLE_API_URL_HML;
+
+const SAVE_URL = `${ORACLE_BASE_URL}/gestaoorcam`;
 
 export async function POST(request: NextRequest) {
   try {

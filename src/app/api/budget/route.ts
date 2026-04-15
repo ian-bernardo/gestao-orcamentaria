@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BASE_URL =
-  'https://homologacao.sistema.romancemoda.com.br/hml/romance/fin/buscadados';
+const ORACLE_BASE_URL =
+  process.env.ORACLE_ENV === 'prod'
+    ? process.env.ORACLE_API_URL_PROD
+    : process.env.ORACLE_API_URL_HML;
+
+const BASE_URL = `${ORACLE_BASE_URL}/buscadados`;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
