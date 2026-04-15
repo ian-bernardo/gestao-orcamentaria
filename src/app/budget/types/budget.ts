@@ -1,7 +1,10 @@
+export type ProposalChangeType = 'manual' | 'copy' | 'reset' | null;
+
 export interface MonthlyData {
   anterior: number;
   proposta: number;
   orcamento: number;
+  changeType?: ProposalChangeType;
   percentAnterior?: number;
   percentProposta?: number;
   percentOrcamento?: number;
@@ -9,9 +12,14 @@ export interface MonthlyData {
 
 export interface BudgetRow {
   id: string;
+  idGestao?: number;
+  businessGroupId?: number;
+  businessUnitId?: number;
   dfc: string;
   conta: string;
   subconta: string;
+  businessGroup?: string;
+  businessUnit?: string;
   level: 'dfc' | 'conta' | 'subconta';
   editable: boolean;
   isExpanded?: boolean;
